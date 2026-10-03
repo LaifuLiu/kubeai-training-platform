@@ -158,11 +158,28 @@ func main() {
 		client: client,
 	}
 
-	http.HandleFunc("/api/v1/training-runs", server.createTrainingRun)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/training-runs", server.createTrainingRun)
 
 	log.Println("KubeAI API listening on :8080")
 
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := http.ListenAndServe(":8080", cors(mux)); err != nil {
 		log.Fatal(err)
 	}
+
+}
+
+func cors(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
