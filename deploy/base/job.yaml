@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cpu-training-v1
+  namespace: kubeai-training
+  labels:
+    app.kubernetes.io/name: kubeai-training
+    app.kubernetes.io/component: training
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubeai-training
+        app.kubernetes.io/component: training
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: trainer
+          image: 192.168.122.1:5000/kubeai-trainer:v0.1.0
+          imagePullPolicy: Always
+          env:
+            - name: EPOCHS
+              value: "100"
+            - name: SEED
+              value: "42"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "3Gi"
