@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -29,6 +33,17 @@ type CreateTrainingRunResponse struct {
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"`
 	Status    string `json:"status"`
+}
+
+type TrainingRunSummary struct {
+	Name      string    `json:"name"`
+	Namespace string    `json:"namespace"`
+	Status    string    `json:"status"`
+	Epochs    string    `json:"epochs,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	Active    int32     `json:"active"`
+	Succeeded int32     `json:"succeeded"`
+	Failed    int32     `json:"failed"`
 }
 
 func newClient() (kubernetes.Interface, error) {
@@ -159,7 +174,11 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/training-runs", server.createTrainingRun)
+	mux.HandleFunc("POST /api/v1/training-runs", server.createTrainingRun)
+	mux.HandleFunc("GET /api/v1/training-runs", server.listTrainingRuns)
+	mux.HandleFunc("GET /api/v1/training-runs/{name}", server.getTrainingRun)
+	mux.HandleFunc("GET /api/v1/training-runs/{name}/logs", server.getTrainingRunLogs)
+	mux.HandleFunc("DELETE /api/v1/training-runs/{name}", server.deleteTrainingRun)
 
 	log.Println("KubeAI API listening on :8080")
 
@@ -172,7 +191,7 @@ func main() {
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 		if r.Method == http.MethodOptions {
@@ -182,4 +201,268 @@ func cors(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func jobStatus(job *batchv1.Job) string {
+	for _, condition := range job.Status.Conditions {
+		if condition.Status != corev1.ConditionTrue {
+			continue
+		}
+
+		switch condition.Type {
+		case batchv1.JobComplete:
+			return "Completed"
+		case batchv1.JobFailed:
+			return "Failed"
+		}
+	}
+
+	if job.Status.Active > 0 {
+		return "Running"
+	}
+
+	return "Pending"
+}
+
+func toSummary(job *batchv1.Job) TrainingRunSummary {
+	summary := TrainingRunSummary{
+		Name:      job.Name,
+		Namespace: job.Namespace,
+		Status:    jobStatus(job),
+		CreatedAt: job.CreationTimestamp.Time,
+		Active:    job.Status.Active,
+		Succeeded: job.Status.Succeeded,
+		Failed:    job.Status.Failed,
+	}
+
+	for _, container := range job.Spec.Template.Spec.Containers {
+		if container.Name != "trainer" {
+			continue
+		}
+
+		for _, env := range container.Env {
+			if env.Name == "EPOCHS" {
+				summary.Epochs = env.Value
+			}
+		}
+	}
+
+	return summary
+}
+
+func (s *Server) listTrainingRuns(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	jobs, err := s.client.BatchV1().
+		Jobs("kubeai-training").
+		List(ctx, metav1.ListOptions{
+			LabelSelector: "kubeai.io/managed-by=kubeai",
+		})
+	if err != nil {
+		http.Error(w, "failed to list training runs", http.StatusInternalServerError)
+		log.Printf("list training runs: %v", err)
+		return
+	}
+
+	runs := make([]TrainingRunSummary, 0, len(jobs.Items))
+	for i := range jobs.Items {
+		runs = append(runs, toSummary(&jobs.Items[i]))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(runs); err != nil {
+		log.Printf("encode training runs: %v", err)
+	}
+}
+
+func (s *Server) getTrainingRun(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "training run name is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	job, err := s.client.BatchV1().
+		Jobs("kubeai-training").
+		Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			http.Error(w, "training run not found", http.StatusNotFound)
+			return
+		}
+
+		log.Printf("get training run %q: %v", name, err)
+		http.Error(w, "failed to get training run", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(toSummary(job)); err != nil {
+		log.Printf("encode training run: %v", err)
+	}
+}
+
+func (s *Server) getTrainingRunLogs(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "training run name is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	namespace := "kubeai-training"
+
+	// Verify that the Job exists before retrieving its logs.
+	_, err := s.client.BatchV1().
+		Jobs(namespace).
+		Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			http.Error(w, "training run not found", http.StatusNotFound)
+			return
+		}
+
+		log.Printf("get job %q: %v", name, err)
+		http.Error(w, "failed to retrieve training run", http.StatusInternalServerError)
+		return
+	}
+
+	// Find the Pod created for this Job.
+	pods, err := s.client.CoreV1().
+		Pods(namespace).
+		List(ctx, metav1.ListOptions{
+			LabelSelector: "batch.kubernetes.io/job-name=" + name,
+		})
+	if err != nil {
+		log.Printf("list pods for job %q: %v", name, err)
+		http.Error(w, "failed to find training pod", http.StatusInternalServerError)
+		return
+	}
+
+	// Support the legacy Job Pod label as a fallback.
+	if len(pods.Items) == 0 {
+		pods, err = s.client.CoreV1().
+			Pods(namespace).
+			List(ctx, metav1.ListOptions{
+				LabelSelector: "job-name=" + name,
+			})
+		if err != nil {
+			log.Printf("list legacy pods for job %q: %v", name, err)
+			http.Error(w, "failed to find training pod", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if len(pods.Items) == 0 {
+		http.Error(w, "training pod is not available yet", http.StatusNotFound)
+		return
+	}
+
+	// Prefer the most recently created Pod.
+	sort.Slice(pods.Items, func(i, j int) bool {
+		return pods.Items[i].CreationTimestamp.After(
+			pods.Items[j].CreationTimestamp.Time,
+		)
+	})
+
+	pod := pods.Items[0]
+
+	req := s.client.CoreV1().
+		Pods(namespace).
+		GetLogs(pod.Name, &corev1.PodLogOptions{
+			Container: "trainer",
+			TailLines: int64Ptr(500),
+		})
+
+	stream, err := req.Stream(ctx)
+	if err != nil {
+		log.Printf("open logs for pod %q: %v", pod.Name, err)
+		http.Error(w, "failed to retrieve training logs", http.StatusInternalServerError)
+		return
+	}
+	defer stream.Close()
+
+	var output strings.Builder
+	if _, err := io.Copy(&output, stream); err != nil {
+		log.Printf("read logs for pod %q: %v", pod.Name, err)
+		http.Error(w, "failed to read training logs", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(output.String()))
+}
+
+func int64Ptr(v int64) *int64 {
+	return &v
+}
+
+func (s *Server) deleteTrainingRun(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "training run name is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	namespace := "kubeai-training"
+
+	job, err := s.client.BatchV1().
+		Jobs(namespace).
+		Get(ctx, name, metav1.GetOptions{})
+
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			http.Error(w, "training run not found", http.StatusNotFound)
+			return
+		}
+
+		log.Printf("get training run %q: %v", name, err)
+		http.Error(w, "failed to retrieve training run", http.StatusInternalServerError)
+		return
+	}
+
+	// Only allow this API to delete Jobs managed by KubeAI.
+	if job.Labels["kubeai.io/managed-by"] != "kubeai" {
+		http.Error(w, "training run is not managed by KubeAI", http.StatusForbidden)
+		return
+	}
+
+	propagation := metav1.DeletePropagationForeground
+
+	err = s.client.BatchV1().
+		Jobs(namespace).
+		Delete(ctx, name, metav1.DeleteOptions{
+			PropagationPolicy: &propagation,
+		})
+
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			http.Error(w, "training run not found", http.StatusNotFound)
+			return
+		}
+
+		log.Printf("delete training run %q: %v", name, err)
+		http.Error(w, "failed to delete training run", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"name":      name,
+		"namespace": namespace,
+		"status":    "deletion_requested",
+	}); err != nil {
+		log.Printf("encode delete response for %q: %v", name, err)
+	}
 }
