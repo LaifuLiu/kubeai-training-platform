@@ -1,4 +1,4 @@
-module github.com/LaifuLiu/kubeai-training-platform
+module github.com/LaifuLiu/kubeai-training-platform/backend
 
 go 1.27.1
 

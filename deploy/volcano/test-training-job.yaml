@@ -1,0 +1,39 @@
+apiVersion: batch.volcano.sh/v1alpha1
+kind: Job
+metadata:
+  name: volcano-test-training
+  namespace: kubeai-training
+  labels:
+    kubeai.io/managed-by: kubeai
+    kubeai.io/component: training
+spec:
+  schedulerName: volcano
+  queue: default
+  minAvailable: 1
+  maxRetry: 0
+  tasks:
+    - name: trainer
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            kubeai.io/managed-by: kubeai
+            kubeai.io/component: training
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: trainer
+              image: 192.168.122.1:5000/kubeai-trainer:v0.1.0
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: EPOCHS
+                  value: "5"
+                - name: SEED
+                  value: "42"
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 1Gi
+                limits:
+                  cpu: "2"
+                  memory: 3Gi

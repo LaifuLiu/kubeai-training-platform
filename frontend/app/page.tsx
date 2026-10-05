@@ -30,9 +30,9 @@ export default function Home() {
   const [logsError, setLogsError] = useState("");
 
   const [cancelTarget, setCancelTarget] = useState("");
-const [cancelLoading, setCancelLoading] = useState(false);
-const [cancelError, setCancelError] = useState("");
-const [cancelNotice, setCancelNotice] = useState("");
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+  const [cancelNotice, setCancelNotice] = useState("");
 
   const loadRuns = useCallback(async () => {
     try {
