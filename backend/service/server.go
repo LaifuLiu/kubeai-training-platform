@@ -8,20 +8,24 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
 type Server struct {
-	client kubernetes.Interface
+	client        kubernetes.Interface
+	dynamicClient dynamic.Interface
 }
 
 type CreateTrainingRunRequest struct {
@@ -46,27 +50,45 @@ type TrainingRunSummary struct {
 	Failed    int32     `json:"failed"`
 }
 
-func newClient() (kubernetes.Interface, error) {
+var volcanoJobGVR = schema.GroupVersionResource{
+	Group:    "batch.volcano.sh",
+	Version:  "v1alpha1",
+	Resource: "jobs",
+}
+
+func newClients() (kubernetes.Interface, dynamic.Interface, error) {
 	config, err := clientcmd.BuildConfigFromFlags(
 		"",
 		clientcmd.RecommendedHomeFile,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return kubernetes.NewForConfig(config)
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return clientset, dynamicClient, nil
 }
 
 func NewServer() *Server {
-	client, err := newClient()
+	clientset, dynamicClient, err := newClients()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	return &Server{
-		client: client,
+		client:        clientset,
+		dynamicClient: dynamicClient,
 	}
+
 }
 
 func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
@@ -89,57 +111,62 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 
 	const namespace = "kubeai-training"
 
-	backoffLimit := int32(0)
-	ttl := int32(3600)
-	deadline := int64(600)
-
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: req.Name,
-			Labels: map[string]string{
-				"kubeai.io/managed-by": "kubeai",
-				"kubeai.io/component":  "training",
-			},
-		},
-		Spec: batchv1.JobSpec{
-			BackoffLimit:            &backoffLimit,
-			ActiveDeadlineSeconds:   &deadline,
-			TTLSecondsAfterFinished: &ttl,
-
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"kubeai.io/managed-by": "kubeai",
-						"kubeai.io/component":  "training",
-					},
+	job := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "batch.volcano.sh/v1alpha1",
+			"kind":       "Job",
+			"metadata": map[string]interface{}{
+				"name":      req.Name,
+				"namespace": "kubeai-training",
+				"labels": map[string]interface{}{
+					"kubeai.io/managed-by": "kubeai",
+					"kubeai.io/component":  "training",
 				},
-				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
-
-					Containers: []corev1.Container{
-						{
-							Name:  "trainer",
-							Image: "192.168.122.1:5000/kubeai-trainer:v0.1.0",
-
-							Env: []corev1.EnvVar{
-								{
-									Name:  "EPOCHS",
-									Value: fmt.Sprintf("%d", req.Epochs),
-								},
-								{
-									Name:  "SEED",
-									Value: "42",
+			},
+			"spec": map[string]interface{}{
+				"schedulerName": "volcano",
+				"queue":         "default",
+				"minAvailable":  int64(1),
+				"maxRetry":      int64(0),
+				"tasks": []interface{}{
+					map[string]interface{}{
+						"name":     "trainer",
+						"replicas": int64(1),
+						"template": map[string]interface{}{
+							"metadata": map[string]interface{}{
+								"labels": map[string]interface{}{
+									"kubeai.io/managed-by": "kubeai",
+									"kubeai.io/component":  "training",
 								},
 							},
-
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("500m"),
-									corev1.ResourceMemory: resource.MustParse("1Gi"),
-								},
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("2"),
-									corev1.ResourceMemory: resource.MustParse("3Gi"),
+							"spec": map[string]interface{}{
+								"restartPolicy": "Never",
+								"containers": []interface{}{
+									map[string]interface{}{
+										"name":            "trainer",
+										"image":           "192.168.122.1:5000/kubeai-trainer:v0.1.0",
+										"imagePullPolicy": "IfNotPresent",
+										"env": []interface{}{
+											map[string]interface{}{
+												"name":  "EPOCHS",
+												"value": strconv.Itoa(req.Epochs),
+											},
+											map[string]interface{}{
+												"name":  "SEED",
+												"value": "42",
+											},
+										},
+										"resources": map[string]interface{}{
+											"requests": map[string]interface{}{
+												"cpu":    "500m",
+												"memory": "1Gi",
+											},
+											"limits": map[string]interface{}{
+												"cpu":    "2",
+												"memory": "3Gi",
+											},
+										},
+									},
 								},
 							},
 						},
@@ -152,9 +179,9 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	created, err := s.client.
-		BatchV1().
-		Jobs(namespace).
+	created, err := s.dynamicClient.
+		Resource(volcanoJobGVR).
+		Namespace("kubeai-training").
 		Create(ctx, job, metav1.CreateOptions{})
 
 	if err != nil {
@@ -163,7 +190,7 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := CreateTrainingRunResponse{
-		Name:      created.Name,
+		Name:      "" + created.GetName(),
 		Namespace: namespace,
 		Status:    "submitted",
 	}
@@ -178,20 +205,36 @@ func (s *Server) ListTrainingRuns(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	jobs, err := s.client.BatchV1().
-		Jobs("kubeai-training").
+	jobs, err := s.dynamicClient.
+		Resource(volcanoJobGVR).
+		Namespace("kubeai-training").
 		List(ctx, metav1.ListOptions{
 			LabelSelector: "kubeai.io/managed-by=kubeai",
 		})
 	if err != nil {
-		http.Error(w, "failed to list training runs", http.StatusInternalServerError)
-		log.Printf("list training runs: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	runs := make([]TrainingRunSummary, 0, len(jobs.Items))
 	for i := range jobs.Items {
-		runs = append(runs, toSummary(&jobs.Items[i]))
+		// runs = append(runs, toSummary(&jobs.Items[i]))
+		job := &jobs.Items[i]
+		status := volcanoJobStatus(job)
+		name := job.GetName()
+		namespace := job.GetNamespace()
+		createdAt := job.GetCreationTimestamp()
+
+		summary := TrainingRunSummary{
+			Name:      name,
+			Namespace: namespace,
+			Status:    status,
+			CreatedAt: createdAt.Time,
+			Active:    0,
+			Succeeded: 0,
+			Failed:    0,
+		}
+		runs = append(runs, summary)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -210,9 +253,14 @@ func (s *Server) GetTrainingRun(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	job, err := s.client.BatchV1().
-		Jobs("kubeai-training").
-		Get(ctx, name, metav1.GetOptions{})
+	job, err := s.dynamicClient.
+		Resource(volcanoJobGVR).
+		Namespace("kubeai-training").
+		Get(
+			ctx,
+			name,
+			metav1.GetOptions{},
+		)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			http.Error(w, "training run not found", http.StatusNotFound)
@@ -225,7 +273,13 @@ func (s *Server) GetTrainingRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(toSummary(job)); err != nil {
+	summary := TrainingRunSummary{
+		Name:      job.GetName(),
+		Namespace: job.GetNamespace(),
+		Status:    volcanoJobStatus(job),
+		CreatedAt: job.GetCreationTimestamp().Time,
+	}
+	if err := json.NewEncoder(w).Encode(summary); err != nil {
 		log.Printf("encode training run: %v", err)
 	}
 }
@@ -243,9 +297,14 @@ func (s *Server) GetTrainingRunLogs(w http.ResponseWriter, r *http.Request) {
 	namespace := "kubeai-training"
 
 	// Verify that the Job exists before retrieving its logs.
-	_, err := s.client.BatchV1().
-		Jobs(namespace).
-		Get(ctx, name, metav1.GetOptions{})
+	_, err := s.dynamicClient.
+		Resource(volcanoJobGVR).
+		Namespace("kubeai-training").
+		Get(
+			ctx,
+			name,
+			metav1.GetOptions{},
+		)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			http.Error(w, "training run not found", http.StatusNotFound)
@@ -258,10 +317,15 @@ func (s *Server) GetTrainingRunLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find the Pod created for this Job.
+	selector := fmt.Sprintf(
+		"volcano.sh/job-name=%s",
+		name,
+	)
+
 	pods, err := s.client.CoreV1().
 		Pods(namespace).
 		List(ctx, metav1.ListOptions{
-			LabelSelector: "batch.kubernetes.io/job-name=" + name,
+			LabelSelector: selector,
 		})
 	if err != nil {
 		log.Printf("list pods for job %q: %v", name, err)
@@ -335,8 +399,9 @@ func (s *Server) DeleteTrainingRun(w http.ResponseWriter, r *http.Request) {
 
 	namespace := "kubeai-training"
 
-	job, err := s.client.BatchV1().
-		Jobs(namespace).
+	job, err := s.dynamicClient.
+		Resource(volcanoJobGVR).
+		Namespace(namespace).
 		Get(ctx, name, metav1.GetOptions{})
 
 	if err != nil {
@@ -351,15 +416,16 @@ func (s *Server) DeleteTrainingRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Only allow this API to delete Jobs managed by KubeAI.
-	if job.Labels["kubeai.io/managed-by"] != "kubeai" {
+	if job.GetLabels()["kubeai.io/managed-by"] != "kubeai" {
 		http.Error(w, "training run is not managed by KubeAI", http.StatusForbidden)
 		return
 	}
 
 	propagation := metav1.DeletePropagationForeground
 
-	err = s.client.BatchV1().
-		Jobs(namespace).
+	err = s.dynamicClient.
+		Resource(volcanoJobGVR).
+		Namespace(namespace).
 		Delete(ctx, name, metav1.DeleteOptions{
 			PropagationPolicy: &propagation,
 		})
@@ -437,4 +503,30 @@ func toSummary(job *batchv1.Job) TrainingRunSummary {
 	}
 
 	return summary
+}
+
+func volcanoJobStatus(job *unstructured.Unstructured) string {
+	phase, found, err := unstructured.NestedString(
+		job.Object,
+		"status",
+		"state",
+		"phase",
+	)
+
+	if err != nil || !found {
+		return "Pending"
+	}
+
+	switch phase {
+	case "Pending":
+		return "Pending"
+	case "Running":
+		return "Running"
+	case "Completed":
+		return "Succeeded"
+	case "Failed":
+		return "Failed"
+	default:
+		return "Pending"
+	}
 }
