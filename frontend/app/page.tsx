@@ -85,7 +85,7 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [loadRuns]);
 
-  async function createRun(event: React.FormEvent<HTMLFormElement>) {
+  async function createRun(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setNotice("");
     setError("");

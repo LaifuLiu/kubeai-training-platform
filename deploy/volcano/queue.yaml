@@ -1,0 +1,10 @@
+apiVersion: scheduling.volcano.sh/v1beta1
+kind: Queue
+metadata:
+  name: ai-training
+spec:
+  weight: 1
+  reclaimable: true
+  guarantee: {}
+  parent: root
+  dequeueStrategy: traverse

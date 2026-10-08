@@ -31,6 +31,8 @@ type Server struct {
 type CreateTrainingRunRequest struct {
 	Name   string `json:"name"`
 	Epochs int    `json:"epochs"`
+	CPU    string `json:"cpu"`
+	Memory string `json:"memory"`
 }
 
 type CreateTrainingRunResponse struct {
@@ -50,11 +52,20 @@ type TrainingRunSummary struct {
 	Failed    int32     `json:"failed"`
 }
 
+type PodCounters struct {
+	Active    int32 `json:"active"`
+	Succeeded int32 `json:"succeeded"`
+	Failed    int32 `json:"failed"`
+}
+
 var volcanoJobGVR = schema.GroupVersionResource{
 	Group:    "batch.volcano.sh",
 	Version:  "v1alpha1",
 	Resource: "jobs",
 }
+
+const trainingQueue = "ai-training"
+const namespace = "kubeai-training"
 
 func newClients() (kubernetes.Interface, dynamic.Interface, error) {
 	config, err := clientcmd.BuildConfigFromFlags(
@@ -109,7 +120,13 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	const namespace = "kubeai-training"
+	if req.CPU == "" {
+		req.CPU = "500m"
+	}
+
+	if req.Memory == "" {
+		req.Memory = "1Gi"
+	}
 
 	job := &unstructured.Unstructured{
 		Object: map[string]interface{}{
@@ -117,7 +134,7 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 			"kind":       "Job",
 			"metadata": map[string]interface{}{
 				"name":      req.Name,
-				"namespace": "kubeai-training",
+				"namespace": namespace,
 				"labels": map[string]interface{}{
 					"kubeai.io/managed-by": "kubeai",
 					"kubeai.io/component":  "training",
@@ -125,7 +142,7 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 			},
 			"spec": map[string]interface{}{
 				"schedulerName": "volcano",
-				"queue":         "default",
+				"queue":         trainingQueue,
 				"minAvailable":  int64(1),
 				"maxRetry":      int64(0),
 				"tasks": []interface{}{
@@ -158,12 +175,12 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 										},
 										"resources": map[string]interface{}{
 											"requests": map[string]interface{}{
-												"cpu":    "500m",
-												"memory": "1Gi",
+												"cpu":    req.CPU,
+												"memory": req.Memory,
 											},
 											"limits": map[string]interface{}{
-												"cpu":    "2",
-												"memory": "3Gi",
+												"cpu":    req.CPU,
+												"memory": req.Memory,
 											},
 										},
 									},
@@ -218,22 +235,28 @@ func (s *Server) ListTrainingRuns(w http.ResponseWriter, r *http.Request) {
 
 	runs := make([]TrainingRunSummary, 0, len(jobs.Items))
 	for i := range jobs.Items {
-		// runs = append(runs, toSummary(&jobs.Items[i]))
 		job := &jobs.Items[i]
-		status := volcanoJobStatus(job)
-		name := job.GetName()
-		namespace := job.GetNamespace()
-		createdAt := job.GetCreationTimestamp()
+
+		counters, err := s.getPodCounters(
+			ctx,
+			job.GetName(),
+		)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		summary := TrainingRunSummary{
-			Name:      name,
-			Namespace: namespace,
-			Status:    status,
-			CreatedAt: createdAt.Time,
-			Active:    0,
-			Succeeded: 0,
-			Failed:    0,
+			Name:      job.GetName(),
+			Namespace: job.GetNamespace(),
+			Status:    volcanoJobStatus(job),
+			CreatedAt: job.GetCreationTimestamp().Time,
+
+			Active:    counters.Active,
+			Succeeded: counters.Succeeded,
+			Failed:    counters.Failed,
 		}
+
 		runs = append(runs, summary)
 	}
 
@@ -451,6 +474,40 @@ func (s *Server) DeleteTrainingRun(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		log.Printf("encode delete response for %q: %v", name, err)
 	}
+}
+
+func (s *Server) getPodCounters(ctx context.Context, jobName string) (PodCounters, error) {
+	pods, err := s.client.CoreV1().
+		Pods("kubeai-training").
+		List(
+			ctx,
+			metav1.ListOptions{
+				LabelSelector: fmt.Sprintf(
+					"volcano.sh/job-name=%s",
+					jobName,
+				),
+			},
+		)
+	if err != nil {
+		return PodCounters{}, err
+	}
+
+	var counters PodCounters
+
+	for _, pod := range pods.Items {
+		switch pod.Status.Phase {
+		case corev1.PodPending, corev1.PodRunning:
+			counters.Active++
+
+		case corev1.PodSucceeded:
+			counters.Succeeded++
+
+		case corev1.PodFailed:
+			counters.Failed++
+		}
+	}
+
+	return counters, nil
 }
 
 //go:fix inline
