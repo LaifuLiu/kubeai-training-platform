@@ -34,6 +34,9 @@ export default function Home() {
   const [cancelError, setCancelError] = useState("");
   const [cancelNotice, setCancelNotice] = useState("");
 
+  const [cpu, setCpu] = useState("500m");
+  const [memory, setMemory] = useState("1Gi");
+
   const loadRuns = useCallback(async () => {
     try {
       const response = await fetch(API, { cache: "no-store" });
@@ -95,7 +98,7 @@ export default function Home() {
       const response = await fetch(API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), epochs }),
+        body: JSON.stringify({ name: name.trim(), epochs, cpu, memory }),
       });
 
       const result = await response.json();
@@ -210,6 +213,26 @@ export default function Home() {
                 max={1000}
                 value={epochs}
                 onChange={(event) => setEpochs(Number(event.target.value))}
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-cyan-500"
+              />
+            </label>
+
+            <label className="flex w-36 flex-col gap-2 text-sm">
+              CPU
+              <input
+                value={cpu}
+                onChange={(e) => setCpu(e.target.value)}
+                placeholder="500m"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-cyan-500"
+              />
+            </label>
+
+            <label className="flex w-36 flex-col gap-2 text-sm">
+              Memory
+              <input
+                value={memory}
+                onChange={(e) => setMemory(e.target.value)}
+                placeholder="1Gi"
                 className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-cyan-500"
               />
             </label>
