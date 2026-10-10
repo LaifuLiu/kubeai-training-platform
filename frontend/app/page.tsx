@@ -37,6 +37,8 @@ export default function Home() {
   const [cpu, setCpu] = useState("500m");
   const [memory, setMemory] = useState("1Gi");
 
+  const [priority, setPriority] = useState("normal");
+
   const loadRuns = useCallback(async () => {
     try {
       const response = await fetch(API, { cache: "no-store" });
@@ -98,7 +100,7 @@ export default function Home() {
       const response = await fetch(API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), epochs, cpu, memory }),
+        body: JSON.stringify({ name: name.trim(), epochs, cpu, memory, priority }),
       });
 
       const result = await response.json();
@@ -235,6 +237,18 @@ export default function Home() {
                 placeholder="1Gi"
                 className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-cyan-500"
               />
+            </label>
+
+            <label className="flex w-36 flex-col gap-2 text-sm">
+              Priority
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-cyan-500"
+              >
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+              </select>
             </label>
 
             <button

@@ -29,10 +29,11 @@ type Server struct {
 }
 
 type CreateTrainingRunRequest struct {
-	Name   string `json:"name"`
-	Epochs int    `json:"epochs"`
-	CPU    string `json:"cpu"`
-	Memory string `json:"memory"`
+	Name     string `json:"name"`
+	Epochs   int    `json:"epochs"`
+	CPU      string `json:"cpu"`
+	Memory   string `json:"memory"`
+	Priority string `json:"priority"`
 }
 
 type CreateTrainingRunResponse struct {
@@ -128,6 +129,22 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		req.Memory = "1Gi"
 	}
 
+	if req.Priority == "" {
+		req.Priority = "normal"
+	}
+
+	var priorityClassName string
+
+	switch req.Priority {
+	case "normal":
+		priorityClassName = "kubeai-normal"
+	case "high":
+		priorityClassName = "kubeai-high"
+	default:
+		http.Error(w, "priority must be normal or high", http.StatusBadRequest)
+		return
+	}
+
 	job := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "batch.volcano.sh/v1alpha1",
@@ -157,7 +174,8 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 								},
 							},
 							"spec": map[string]interface{}{
-								"restartPolicy": "Never",
+								"restartPolicy":     "Never",
+								"priorityClassName": priorityClassName,
 								"containers": []interface{}{
 									map[string]interface{}{
 										"name":            "trainer",
