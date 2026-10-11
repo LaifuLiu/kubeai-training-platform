@@ -29,6 +29,6 @@ func main() {
 
 	log.Println("PostgreSQL connected; training_runs schema initialized")
 
-	r := router.NewRouter()
+	r := router.NewRouter(db)
 	r.Run("8080")
 }

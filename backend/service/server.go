@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,11 +22,14 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/LaifuLiu/kubeai-training-platform/backend/registory"
 )
 
 type Server struct {
 	client        kubernetes.Interface
 	dynamicClient dynamic.Interface
+	db            *sql.DB
 }
 
 type CreateTrainingRunRequest struct {
@@ -90,7 +94,7 @@ func newClients() (kubernetes.Interface, dynamic.Interface, error) {
 	return clientset, dynamicClient, nil
 }
 
-func NewServer() *Server {
+func NewServer(db *sql.DB) *Server {
 	clientset, dynamicClient, err := newClients()
 	if err != nil {
 		log.Fatal(err)
@@ -99,6 +103,7 @@ func NewServer() *Server {
 	return &Server{
 		client:        clientset,
 		dynamicClient: dynamicClient,
+		db:            db,
 	}
 
 }
@@ -224,6 +229,52 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	run := registory.TrainingRun{
+		Name:      created.GetName(),
+		Namespace: namespace,
+		Epochs:    req.Epochs,
+		CPU:       req.CPU,
+		Memory:    req.Memory,
+		Priority:  req.Priority,
+		Queue:     trainingQueue,
+		Status:    "Pending",
+	}
+
+	if err := registory.CreateTrainingRunRecord(ctx, s.db, run); err != nil {
+		// Best-effort cleanup so we don't leave an untracked Volcano Job.
+		cleanupCtx, cleanupCancel := context.WithTimeout(
+			context.Background(),
+			5*time.Second,
+		)
+		defer cleanupCancel()
+
+		cleanupErr := s.dynamicClient.
+			Resource(volcanoJobGVR).
+			Namespace(namespace).
+			Delete(cleanupCtx, created.GetName(), metav1.DeleteOptions{})
+
+		if cleanupErr != nil {
+			log.Printf(
+				"database insert failed for training run %q; cleanup failed: %v",
+				created.GetName(),
+				cleanupErr,
+			)
+		}
+
+		log.Printf(
+			"database insert failed for training run %q: %v",
+			created.GetName(),
+			err,
+		)
+
+		http.Error(
+			w,
+			"training Job was created but its database record could not be saved",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
 	response := CreateTrainingRunResponse{
 		Name:      "" + created.GetName(),
 		Namespace: namespace,
@@ -240,39 +291,61 @@ func (s *Server) ListTrainingRuns(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	jobs, err := s.dynamicClient.
-		Resource(volcanoJobGVR).
-		Namespace("kubeai-training").
-		List(ctx, metav1.ListOptions{
-			LabelSelector: "kubeai.io/managed-by=kubeai",
-		})
+	runsRecords, err := registory.GetAllTrainingRunRecords(ctx, s.db)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("query training run records: %v", err)
+		http.Error(w, "failed to query training run records", http.StatusInternalServerError)
 		return
 	}
 
-	runs := make([]TrainingRunSummary, 0, len(jobs.Items))
-	for i := range jobs.Items {
-		job := &jobs.Items[i]
-
-		counters, err := s.getPodCounters(
-			ctx,
-			job.GetName(),
-		)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+	runs := make([]TrainingRunSummary, 0, len(runsRecords))
+	for _, run := range runsRecords {
+		summary := TrainingRunSummary{
+			Name:      run.Name,
+			Namespace: run.Namespace,
+			Status:    run.Status,
+			CreatedAt: run.CreatedAt,
 		}
 
-		summary := TrainingRunSummary{
-			Name:      job.GetName(),
-			Namespace: job.GetNamespace(),
-			Status:    volcanoJobStatus(job),
-			CreatedAt: job.GetCreationTimestamp().Time,
+		// Volcano provides live status while the Job still exists.
+		job, err := s.dynamicClient.
+			Resource(volcanoJobGVR).
+			Namespace(run.Namespace).
+			Get(ctx, run.Name, metav1.GetOptions{})
 
-			Active:    counters.Active,
-			Succeeded: counters.Succeeded,
-			Failed:    counters.Failed,
+		if err == nil {
+			summary.Status = volcanoJobStatus(job)
+
+			if run.Status != "Cancelled" {
+				if err := registory.UpdateTrainingRunStatus(
+					ctx,
+					s.db,
+					run.Name,
+					summary.Status,
+				); err != nil {
+					log.Printf("sync status for training run %s: %v", run.Name, err)
+					http.Error(w, "failed to synchronize training run status", http.StatusInternalServerError)
+					return
+				}
+			}
+
+			counters, err := s.getPodCounters(ctx, run.Name)
+			if err != nil {
+				http.Error(w, "failed to query training Pod status", http.StatusInternalServerError)
+				log.Printf("get Pod counters for %s: %v", run.Name, err)
+				return
+			}
+
+			summary.Active = counters.Active
+			summary.Succeeded = counters.Succeeded
+			summary.Failed = counters.Failed
+		} else if apierrors.IsNotFound(err) {
+			// No Volcano Job: retain the last status recorded in PostgreSQL.
+			// We will improve lifecycle status synchronization in a later step.
+		} else {
+			http.Error(w, "failed to query Volcano Job", http.StatusInternalServerError)
+			log.Printf("get Volcano Job %s: %v", run.Name, err)
+			return
 		}
 
 		runs = append(runs, summary)
@@ -479,6 +552,12 @@ func (s *Server) DeleteTrainingRun(w http.ResponseWriter, r *http.Request) {
 
 		log.Printf("delete training run %q: %v", name, err)
 		http.Error(w, "failed to delete training run", http.StatusInternalServerError)
+		return
+	}
+
+	if err := registory.UpdateTrainingRunStatus(ctx, s.db, name, "Cancelled"); err != nil {
+		log.Printf("sync cancelled status for training run %q: %v", name, err)
+		http.Error(w, "deletion was requested but database status update failed", http.StatusInternalServerError)
 		return
 	}
 

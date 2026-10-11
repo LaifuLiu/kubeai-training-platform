@@ -1,22 +1,5 @@
 package model
 
-import "time"
-
-type TrainingRun struct {
-	ID          int64      `json:"id"`
-	Name        string     `json:"name"`
-	Namespace   string     `json:"namespace"`
-	Epochs      int        `json:"epochs"`
-	CPU         string     `json:"cpu"`
-	Memory      string     `json:"memory"`
-	Priority    string     `json:"priority"`
-	Queue       string     `json:"queue"`
-	Status      string     `json:"status"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	UpdatedAt   time.Time  `json:"updatedAt"`
-	CompletedAt *time.Time `json:"completedAt,omitempty"`
-}
-
 const CreateTrainingRunsTableSQL = `
 CREATE TABLE IF NOT EXISTS training_runs (
     id BIGSERIAL PRIMARY KEY,
@@ -33,3 +16,29 @@ CREATE TABLE IF NOT EXISTS training_runs (
     completed_at TIMESTAMPTZ
 );
 `
+
+const CreateTrainingRunRecordSQL = `
+INSERT INTO training_runs (
+			name, namespace, epochs, cpu, memory,
+			priority, queue, status
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+`
+
+const GetAllTrainingRunRecordsSQL = `
+SELECT name, namespace, epochs, cpu, memory, priority, queue, status, created_at
+FROM training_runs
+ORDER BY created_at DESC
+`
+
+const UpdateTrainingRunStatusSQL = `
+		UPDATE training_runs
+		SET status = $2,
+		    updated_at = NOW(),
+		    completed_at = CASE
+		        WHEN $2 IN ('Succeeded', 'Failed', 'Cancelled')
+		            THEN COALESCE(completed_at, NOW())
+		        ELSE NULL
+		    END
+		WHERE name = $1
+	`

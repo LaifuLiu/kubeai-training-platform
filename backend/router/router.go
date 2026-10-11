@@ -1,6 +1,7 @@
 package router
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
 
@@ -12,8 +13,8 @@ type Router struct {
 	mux *http.ServeMux
 }
 
-func NewRouter() *Router {
-	server := service.NewServer()
+func NewRouter(db *sql.DB) *Router {
+	server := service.NewServer(db)
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/training-runs", server.CreateTrainingRun)
 	mux.HandleFunc("GET /api/v1/training-runs", server.ListTrainingRuns)
