@@ -16,6 +16,7 @@ type Router struct {
 func NewRouter(db *sql.DB) *Router {
 	server := service.NewServer(db)
 	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", service.Handler())
 	mux.HandleFunc("POST /api/v1/training-runs", server.CreateTrainingRun)
 	mux.HandleFunc("GET /api/v1/training-runs", server.ListTrainingRuns)
 	mux.HandleFunc("GET /api/v1/training-runs/{name}", server.GetTrainingRun)
@@ -28,7 +29,9 @@ func NewRouter(db *sql.DB) *Router {
 func (r *Router) Run(port string) {
 	log.Println("KubeAI API listening on :" + port)
 
-	if err := http.ListenAndServe(":"+port, middleware.Cors(r.mux)); err != nil {
+	handler := middleware.Metrics(middleware.Cors(r.mux))
+
+	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatal(err)
 	}
 }
