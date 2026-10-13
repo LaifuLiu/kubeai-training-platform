@@ -62,6 +62,7 @@ jobs:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/kubeai-training-platform-backend
           tags: |
             type=sha,format=long,prefix=
+            type=raw,value=latest
 
       - name: Build and push
         uses: docker/build-push-action@v6
