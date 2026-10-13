@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-const API = `${process.env.NEXT_PUBLIC_API_URL}/api/v1/training-runs`;
+const API = "/backend-api/api/v1/training-runs";
 
 type TrainingRun = {
   name: string;
