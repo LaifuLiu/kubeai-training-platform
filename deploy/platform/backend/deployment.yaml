@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubeai-backend
+  namespace: kubeai-training
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubeai-backend
+  template:
+    metadata:
+      labels:
+        app: kubeai-backend
+    spec:
+      containers:
+        - name: backend
+          image: laifuliu26/kubeai-training-platform-backend:c09931108e4d3d477998743415c942ae31df996c
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DB_HOST
+              value: postgres-service.db.svc.cluster.local
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: kubeai_training
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: kubeai-backend-db
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kubeai-backend-db
+                  key: DB_PASSWORD
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kubeai-platform
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/LaifuLiu/kubeai-training-platform.git
+    targetRevision: main
+    path: deploy/platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kubeai-training
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
