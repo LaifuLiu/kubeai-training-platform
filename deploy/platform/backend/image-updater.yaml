@@ -1,0 +1,20 @@
+
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: kubeai-backend
+  namespace: argocd
+spec:
+  writeBackConfig:
+    method: git:secret:kubeai-git-writeback
+    gitConfig:
+      branch: main
+      writeBackTarget: kustomization:/deploy/platform/backend
+  applicationRefs:
+    - namePattern: kubeai-platform
+      images:
+        - alias: backend
+          imageName: laifuliu26/kubeai-training-platform-backend:c09931108e4d3d477998743415c942ae31df996c
+          commonUpdateSettings:
+            updateStrategy: newest-build
+            allowTags: "regexp:^[a-f0-9]{40}$"

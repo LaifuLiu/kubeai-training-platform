@@ -1,0 +1,35 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubeai-frontend
+  namespace: kubeai-training
+  labels:
+    app: kubeai-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubeai-frontend
+  template:
+    metadata:
+      labels:
+        app: kubeai-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: laifuliu26/kubeai-training-platform-frontend:91887110f26eb2991653bc72822754be74406698
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: BACKEND_API_URL
+              value: "http://kubeai-backend.kubeai-training.svc.cluster.local:8080"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

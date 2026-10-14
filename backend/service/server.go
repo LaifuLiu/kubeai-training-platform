@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/LaifuLiu/kubeai-training-platform/backend/registory"
@@ -73,12 +74,15 @@ const trainingQueue = "ai-training"
 const namespace = "kubeai-training"
 
 func newClients() (kubernetes.Interface, dynamic.Interface, error) {
-	config, err := clientcmd.BuildConfigFromFlags(
-		"",
-		clientcmd.RecommendedHomeFile,
-	)
+	config, err := rest.InClusterConfig()
 	if err != nil {
-		return nil, nil, err
+		config, err = clientcmd.BuildConfigFromFlags(
+			"",
+			clientcmd.RecommendedHomeFile,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
