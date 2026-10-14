@@ -7,4 +7,4 @@ resources:
 
 images:
   - name: laifuliu26/kubeai-training-platform-frontend
-    newTag: 0c4aa70e2129d8689c3a1b7d15eb68d55ce0dcfa
+    newTag: c927b6ce529f24dbdf8e5a7283e6ad0435e85b24
