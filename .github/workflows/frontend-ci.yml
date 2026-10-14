@@ -36,7 +36,7 @@ jobs:
       - name: Build frontend
         run: npm run build
         env:
-          BACKEND_API_URL: http://localhost:8080
+          BACKEND_API_URL: http://kubeai-backend.kubeai-training.svc.cluster.local:8080
 
   publish:
     name: Build and push Docker image
