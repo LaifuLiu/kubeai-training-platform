@@ -5,4 +5,4 @@ resources:
   - service.yaml
 images:
   - name: laifuliu26/kubeai-training-platform-backend
-    newTag: c09931108e4d3d477998743415c942ae31df996c
+    newTag: ba03a4e994a59713cf8537610196b751bafc8523
