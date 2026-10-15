@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - deployment.yaml
   - service.yaml
+  - rbac.yaml
 images:
   - name: laifuliu26/kubeai-training-platform-backend
     newTag: ba03a4e994a59713cf8537610196b751bafc8523
