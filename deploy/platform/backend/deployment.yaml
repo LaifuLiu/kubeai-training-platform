@@ -13,6 +13,7 @@ spec:
       labels:
         app: kubeai-backend
     spec:
+      serviceAccountName: kubeai-backend
       containers:
         - name: backend
           image: laifuliu26/kubeai-training-platform-backend:c09931108e4d3d477998743415c942ae31df996c
