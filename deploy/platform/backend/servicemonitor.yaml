@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kubeai-backend
+  namespace: kubeai-training
+  labels:
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - kubeai-training
+  selector:
+    matchLabels:
+      app: kubeai-backend
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
