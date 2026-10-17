@@ -7,4 +7,4 @@ resources:
   - servicemonitor.yaml
 images:
   - name: laifuliu26/kubeai-training-platform-backend
-    newTag: ba03a4e994a59713cf8537610196b751bafc8523
+    newTag: 99f221c0882a68709682ee9329ac195fbce927e5
