@@ -11,10 +11,10 @@ import (
 )
 
 func OpenDatabase(ctx context.Context) (*sql.DB, error) {
-	host := envOrDefault("DB_HOST", "127.0.0.1")
-	port := envOrDefault("DB_PORT", "5432")
-	user := envOrDefault("DB_USER", "postgres")
-	name := envOrDefault("DB_NAME", "kubeai_training")
+	host := os.Getenv("DB_HOST")
+	port := os.Getenv("DB_PORT")
+	user := os.Getenv("DB_USER")
+	name := os.Getenv("DB_NAME")
 	password := os.Getenv("DB_PASSWORD")
 
 	if password == "" {
@@ -42,11 +42,4 @@ func OpenDatabase(ctx context.Context) (*sql.DB, error) {
 	}
 
 	return db, nil
-}
-
-func envOrDefault(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
 }

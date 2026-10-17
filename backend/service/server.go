@@ -39,6 +39,7 @@ type CreateTrainingRunRequest struct {
 	CPU      string `json:"cpu"`
 	Memory   string `json:"memory"`
 	Priority string `json:"priority"`
+	Replicas int    `json:"replicas"`
 }
 
 type CreateTrainingRunResponse struct {
@@ -142,6 +143,15 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		req.Priority = "normal"
 	}
 
+	if req.Replicas == 0 {
+		req.Replicas = 1
+	}
+
+	if req.Replicas < 1 || req.Replicas > 8 {
+		http.Error(w, "replicas must be between 1 and 8", http.StatusBadRequest)
+		return
+	}
+
 	var priorityClassName string
 
 	switch req.Priority {
@@ -169,12 +179,12 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 			"spec": map[string]interface{}{
 				"schedulerName": "volcano",
 				"queue":         trainingQueue,
-				"minAvailable":  int64(1),
+				"minAvailable":  int64(req.Replicas),
 				"maxRetry":      int64(0),
 				"tasks": []interface{}{
 					map[string]interface{}{
 						"name":     "trainer",
-						"replicas": int64(1),
+						"replicas": int64(req.Replicas),
 						"template": map[string]interface{}{
 							"metadata": map[string]interface{}{
 								"labels": map[string]interface{}{

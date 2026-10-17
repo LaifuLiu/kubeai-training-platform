@@ -5,12 +5,20 @@ import (
 	"log"
 	"time"
 
+	"github.com/joho/godotenv"
+
 	"github.com/LaifuLiu/kubeai-training-platform/backend/db"
 	"github.com/LaifuLiu/kubeai-training-platform/backend/registory"
 	"github.com/LaifuLiu/kubeai-training-platform/backend/router"
 )
 
 func main() {
+	// Load the .env file (ignores error if file doesn't exist, e.g., in production)
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
 	dbCtx, cancel := context.WithTimeout(
 		context.Background(),
 		10*time.Second,
