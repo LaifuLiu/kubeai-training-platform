@@ -445,11 +445,11 @@ export default function Home() {
             {logsLoading ? (
               <p className="text-sm text-slate-400">Loading logs...</p>
             ) : logsError ? (
-              <pre className="whitespace-pre-wrap break-words text-sm text-red-400">
+              <pre className="whitespace-pre-wrap wrap-break-wordword text-sm text-red-400">
                 {logsError}
               </pre>
             ) : logs ? (
-              <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words font-mono text-sm leading-6 text-emerald-300">
+              <pre className="max-h-128 overflow-auto whitespace-pre-wrap wrap-break-word font-mono text-sm leading-6 text-emerald-300">
                 {logs}
               </pre>
             ) : (
