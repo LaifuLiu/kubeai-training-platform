@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -627,53 +626,6 @@ func (s *Server) getPodCounters(ctx context.Context, jobName string) (PodCounter
 //go:fix inline
 func int64Ptr(v int64) *int64 {
 	return new(v)
-}
-
-func jobStatus(job *batchv1.Job) string {
-	for _, condition := range job.Status.Conditions {
-		if condition.Status != corev1.ConditionTrue {
-			continue
-		}
-
-		switch condition.Type {
-		case batchv1.JobComplete:
-			return "Completed"
-		case batchv1.JobFailed:
-			return "Failed"
-		}
-	}
-
-	if job.Status.Active > 0 {
-		return "Running"
-	}
-
-	return "Pending"
-}
-
-func toSummary(job *batchv1.Job) TrainingRunSummary {
-	summary := TrainingRunSummary{
-		Name:      job.Name,
-		Namespace: job.Namespace,
-		Status:    jobStatus(job),
-		CreatedAt: job.CreationTimestamp.Time,
-		Active:    job.Status.Active,
-		Succeeded: job.Status.Succeeded,
-		Failed:    job.Status.Failed,
-	}
-
-	for _, container := range job.Spec.Template.Spec.Containers {
-		if container.Name != "trainer" {
-			continue
-		}
-
-		for _, env := range container.Env {
-			if env.Name == "EPOCHS" {
-				summary.Epochs = env.Value
-			}
-		}
-	}
-
-	return summary
 }
 
 func volcanoJobStatus(job *unstructured.Unstructured) string {
