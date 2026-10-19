@@ -36,8 +36,8 @@ export default function Home() {
 
   const [cpu, setCpu] = useState("500m");
   const [memory, setMemory] = useState("1Gi");
-
   const [priority, setPriority] = useState("normal");
+  const [replicas, setReplicas] = useState(1);
 
   const loadRuns = useCallback(async () => {
     try {
@@ -100,7 +100,7 @@ export default function Home() {
       const response = await fetch(API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), epochs, cpu, memory, priority }),
+        body: JSON.stringify({ name: name.trim(), epochs, cpu, memory, priority, replicas }),
       });
 
       const result = await response.json();
@@ -249,6 +249,19 @@ export default function Home() {
                 <option value="normal">Normal</option>
                 <option value="high">High</option>
               </select>
+            </label>
+
+            <label className="flex w-36 flex-col gap-2 text-sm">
+              Replicas
+              <input
+                required
+                type="number"
+                min={1}
+                max={1000}
+                value={replicas}
+                onChange={(event) => setReplicas(Number(event.target.value))}
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-cyan-500"
+              />
             </label>
 
             <button

@@ -33,11 +33,6 @@ func InitializeTrainingRunsSchema(
 	if _, err := db.ExecContext(ctx, model.CreateTrainingRunsTableSQL); err != nil {
 		return fmt.Errorf("create training_runs table: %w", err)
 	}
-
-	if _, err := db.ExecContext(ctx, model.AddTrainingRunsReplicasColumnSQL); err != nil {
-		return fmt.Errorf("add replicas column: %w", err)
-	}
-
 	return nil
 }
 
