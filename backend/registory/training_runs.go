@@ -15,6 +15,7 @@ type TrainingRun struct {
 	Name        string     `json:"name"`
 	Namespace   string     `json:"namespace"`
 	Epochs      int        `json:"epochs"`
+	Replicas    int        `json:"replicas"`
 	CPU         string     `json:"cpu"`
 	Memory      string     `json:"memory"`
 	Priority    string     `json:"priority"`
@@ -33,6 +34,10 @@ func InitializeTrainingRunsSchema(
 		return fmt.Errorf("create training_runs table: %w", err)
 	}
 
+	if _, err := db.ExecContext(ctx, model.AddTrainingRunsReplicasColumnSQL); err != nil {
+		return fmt.Errorf("add replicas column: %w", err)
+	}
+
 	return nil
 }
 
@@ -43,6 +48,7 @@ func CreateTrainingRunRecord(ctx context.Context,
 		run.Name,
 		run.Namespace,
 		run.Epochs,
+		run.Replicas,
 		run.CPU,
 		run.Memory,
 		run.Priority,
@@ -71,6 +77,7 @@ func GetAllTrainingRunRecords(ctx context.Context,
 			&run.Name,
 			&run.Namespace,
 			&run.Epochs,
+			&run.Replicas,
 			&run.CPU,
 			&run.Memory,
 			&run.Priority,

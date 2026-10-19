@@ -53,6 +53,7 @@ type TrainingRunSummary struct {
 	Namespace string    `json:"namespace"`
 	Status    string    `json:"status"`
 	Epochs    string    `json:"epochs,omitempty"`
+	Replicas  int       `json:"replicas,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	Active    int32     `json:"active"`
 	Succeeded int32     `json:"succeeded"`
@@ -247,6 +248,7 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		Name:      created.GetName(),
 		Namespace: namespace,
 		Epochs:    req.Epochs,
+		Replicas:  req.Replicas,
 		CPU:       req.CPU,
 		Memory:    req.Memory,
 		Priority:  req.Priority,
@@ -318,6 +320,7 @@ func (s *Server) ListTrainingRuns(w http.ResponseWriter, r *http.Request) {
 			Name:      run.Name,
 			Namespace: run.Namespace,
 			Status:    run.Status,
+			Replicas:  run.Replicas,
 			CreatedAt: run.CreatedAt,
 		}
 
