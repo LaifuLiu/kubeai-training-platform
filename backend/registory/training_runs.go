@@ -24,6 +24,8 @@ type TrainingRun struct {
 	Status      string     `json:"status"`
 	CreatedAt   time.Time  `json:"createdAt"`
 	UpdatedAt   time.Time  `json:"updatedAt"`
+	ScheduledAt *time.Time `json:"scheduledAt,omitempty"`
+	StartedAt   *time.Time `json:"startedAt,omitempty"`
 	CompletedAt *time.Time `json:"completedAt,omitempty"`
 }
 
@@ -82,6 +84,9 @@ func GetAllTrainingRunRecords(ctx context.Context,
 			&run.Queue,
 			&run.Status,
 			&run.CreatedAt,
+			&run.UpdatedAt,
+			&run.ScheduledAt,
+			&run.StartedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan training run record: %w", err)
 		}
@@ -113,6 +118,36 @@ func UpdateTrainingRunStatus(ctx context.Context,
 	}
 
 	log.Printf("training run %q status updated to %q in database", name, status)
+
+	return nil
+}
+
+func UpdateTrainingRunScheduledAt(
+	ctx context.Context,
+	db *sql.DB,
+	name string,
+	at time.Time,
+) error {
+	_, err := db.ExecContext(ctx, model.UpdateTrainingRunScheduledAtSQL, name, at)
+
+	if err != nil {
+		return fmt.Errorf("update training run scheduled_at: %w", err)
+	}
+
+	return nil
+}
+
+func UpdateTrainingRunStartedAt(
+	ctx context.Context,
+	db *sql.DB,
+	name string,
+	at time.Time,
+) error {
+	_, err := db.ExecContext(ctx, model.UpdateTrainingRunStartedAtSQL, name, at)
+
+	if err != nil {
+		return fmt.Errorf("update training run started_at: %w", err)
+	}
 
 	return nil
 }

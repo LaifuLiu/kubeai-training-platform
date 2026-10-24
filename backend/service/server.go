@@ -49,19 +49,51 @@ type CreateTrainingRunResponse struct {
 	Status    string `json:"status"`
 }
 
+type PodResourceRequests struct {
+	CPU    string `json:"cpu,omitempty"`
+	Memory string `json:"memory,omitempty"`
+	GPUs   string `json:"gpus,omitempty"`
+}
+
+type TrainingPodSummary struct {
+	Name           string               `json:"name"`
+	Phase          string               `json:"phase"`
+	NodeName       string               `json:"nodeName,omitempty"`
+	PendingReason  string               `json:"pendingReason,omitempty"`
+	PendingMessage string               `json:"pendingMessage,omitempty"`
+	Requests       PodResourceRequests  `json:"requests"`
+	Usage          *PodResourceRequests `json:"usage,omitempty"`
+}
+
 type TrainingRunSummary struct {
-	Name      string    `json:"name"`
-	Namespace string    `json:"namespace"`
-	Status    string    `json:"status"`
-	Epochs    string    `json:"epochs,omitempty"`
-	Replicas  int       `json:"replicas,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
-	Active    int32     `json:"active"`
-	Succeeded int32     `json:"succeeded"`
-	Failed    int32     `json:"failed"`
-	CPU       string    `json:"cpu"`
-	Memory    string    `json:"memory"`
-	GPUs      int       `json:"gpus"`
+	Name                  string               `json:"name"`
+	Namespace             string               `json:"namespace"`
+	Status                string               `json:"status"`
+	Epochs                string               `json:"epochs,omitempty"`
+	Replicas              int                  `json:"replicas,omitempty"`
+	CreatedAt             time.Time            `json:"createdAt"`
+	Active                int32                `json:"active"`
+	Succeeded             int32                `json:"succeeded"`
+	Failed                int32                `json:"failed"`
+	CPU                   string               `json:"cpu"`
+	Memory                string               `json:"memory"`
+	GPUs                  int                  `json:"gpus"`
+	ScheduledAt           *time.Time           `json:"scheduledAt,omitempty"`
+	StartedAt             *time.Time           `json:"startedAt,omitempty"`
+	QueueWaitSeconds      *float64             `json:"queueWaitSeconds,omitempty"`
+	StartupLatencySeconds *float64             `json:"startupLatencySeconds,omitempty"`
+	Pods                  []TrainingPodSummary `json:"pods,omitempty"`
+}
+
+type podMetricsList struct {
+	Items []struct {
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
+		Containers []struct {
+			Usage corev1.ResourceList `json:"usage"`
+		} `json:"containers"`
+	} `json:"items"`
 }
 
 type PodCounters struct {
@@ -398,6 +430,7 @@ func (s *Server) ListTrainingRuns(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			// calculate the number of active, succeeded, and failed Pods for this training run vcjob.
 			counters, err := s.getPodCounters(ctx, run.Name)
 			if err != nil {
 				http.Error(w, "failed to query training Pod status", http.StatusInternalServerError)
@@ -408,6 +441,47 @@ func (s *Server) ListTrainingRuns(w http.ResponseWriter, r *http.Request) {
 			summary.Active = counters.Active
 			summary.Succeeded = counters.Succeeded
 			summary.Failed = counters.Failed
+
+			podSummaries, err := s.getTrainingPodSummaries(ctx, run.Name)
+			if err != nil {
+				log.Printf(
+					"get Pod summaries for training run %s: %v",
+					run.Name,
+					err,
+				)
+				http.Error(
+					w,
+					"failed to query training Pod details",
+					http.StatusInternalServerError,
+				)
+				return
+			}
+
+			summary.Pods = podSummaries
+
+			// sync the lifecycle timestamps for the training run in PostgreSQL.
+			if err := s.syncTrainingRunTimestamps(ctx, &run); err != nil {
+				log.Printf("sync lifecycle timestamps for %s: %v", run.Name, err)
+				http.Error(
+					w,
+					"failed to synchronize training run timestamps",
+					http.StatusInternalServerError,
+				)
+				return
+			}
+
+			summary.ScheduledAt = run.ScheduledAt
+			summary.StartedAt = run.StartedAt
+
+			if run.ScheduledAt != nil {
+				seconds := run.ScheduledAt.Sub(run.CreatedAt).Seconds()
+				summary.QueueWaitSeconds = &seconds
+			}
+
+			if run.StartedAt != nil {
+				seconds := run.StartedAt.Sub(run.CreatedAt).Seconds()
+				summary.StartupLatencySeconds = &seconds
+			}
 		} else if apierrors.IsNotFound(err) {
 			// No Volcano Job: retain the last status recorded in PostgreSQL.
 			// We will improve lifecycle status synchronization in a later step.
@@ -729,6 +803,198 @@ func (s *Server) getPodCounters(ctx context.Context, jobName string) (PodCounter
 	}
 
 	return counters, nil
+}
+
+func (s *Server) getTrainingPodSummaries(
+	ctx context.Context,
+	jobName string,
+) ([]TrainingPodSummary, error) {
+	pods, err := s.client.CoreV1().
+		Pods(namespace).
+		List(ctx, metav1.ListOptions{
+			LabelSelector: fmt.Sprintf(
+				"volcano.sh/job-name=%s",
+				jobName,
+			),
+		})
+	if err != nil {
+		return nil, err
+	}
+
+	// Metrics are optional: a metrics API problem should not prevent
+	// users from seeing Pod scheduling status and resource requests.
+	usageByPod := make(map[string]PodResourceRequests)
+
+	metricsPath := fmt.Sprintf(
+		"/apis/metrics.k8s.io/v1beta1/namespaces/%s/pods",
+		namespace,
+	)
+
+	raw, metricsErr := s.client.Discovery().
+		RESTClient().
+		Get().
+		AbsPath(metricsPath).
+		Param("labelSelector", fmt.Sprintf(
+			"volcano.sh/job-name=%s",
+			jobName,
+		)).
+		Do(ctx).
+		Raw()
+
+	if metricsErr == nil {
+		var metrics podMetricsList
+		if err := json.Unmarshal(raw, &metrics); err != nil {
+			log.Printf("decode Pod metrics for %s: %v", jobName, err)
+		} else {
+			for _, item := range metrics.Items {
+				var cpu, memory, gpu resource.Quantity
+
+				for _, container := range item.Containers {
+					if q, ok := container.Usage[corev1.ResourceCPU]; ok {
+						cpu.Add(q)
+					}
+					if q, ok := container.Usage[corev1.ResourceMemory]; ok {
+						memory.Add(q)
+					}
+					if q, ok := container.Usage[corev1.ResourceName("nvidia.com/gpu")]; ok {
+						gpu.Add(q)
+					}
+				}
+
+				usageByPod[item.Metadata.Name] = PodResourceRequests{
+					CPU:    cpu.String(),
+					Memory: memory.String(),
+					GPUs:   gpu.String(),
+				}
+			}
+		}
+	} else {
+		log.Printf("retrieve Pod metrics for %s: %v", jobName, metricsErr)
+	}
+
+	result := make([]TrainingPodSummary, 0, len(pods.Items))
+
+	for _, pod := range pods.Items {
+		summary := TrainingPodSummary{
+			Name:     pod.Name,
+			Phase:    string(pod.Status.Phase),
+			NodeName: pod.Spec.NodeName,
+			Requests: PodResourceRequests{},
+		}
+
+		// Report the sum of the resource requests across all containers.
+		var cpuRequest, memoryRequest, gpuRequest resource.Quantity
+
+		for _, container := range pod.Spec.Containers {
+			if q, ok := container.Resources.Requests[corev1.ResourceCPU]; ok {
+				cpuRequest.Add(q)
+			}
+			if q, ok := container.Resources.Requests[corev1.ResourceMemory]; ok {
+				memoryRequest.Add(q)
+			}
+			if q, ok := container.Resources.Requests[corev1.ResourceName("nvidia.com/gpu")]; ok {
+				gpuRequest.Add(q)
+			}
+
+		}
+
+		// Image pulls, container creation, and similar startup failures
+		// may be more informative than the generic Pod phase.
+		for _, containerStatus := range pod.Status.ContainerStatuses {
+			waiting := containerStatus.State.Waiting
+			if waiting != nil && summary.PendingReason == "" {
+				summary.PendingReason = waiting.Reason
+				summary.PendingMessage = waiting.Message
+			}
+		}
+
+		summary.Requests = PodResourceRequests{
+			CPU:    cpuRequest.String(),
+			Memory: memoryRequest.String(),
+			GPUs:   gpuRequest.String(),
+		}
+
+		// A scheduling condition gives a more specific explanation
+		// when Kubernetes cannot place the Pod.
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.PodScheduled &&
+				condition.Status == corev1.ConditionFalse {
+				summary.PendingReason = condition.Reason
+				summary.PendingMessage = condition.Message
+				break
+			}
+		}
+
+		if usage, ok := usageByPod[pod.Name]; ok {
+			summary.Usage = &usage
+		}
+
+		result = append(result, summary)
+	}
+
+	return result, nil
+}
+
+func (s *Server) syncTrainingRunTimestamps(
+	ctx context.Context,
+	run *registory.TrainingRun,
+) error {
+	pods, err := s.client.CoreV1().
+		Pods(run.Namespace).
+		List(ctx, metav1.ListOptions{
+			LabelSelector: fmt.Sprintf(
+				"volcano.sh/job-name=%s",
+				run.Name,
+			),
+		})
+	if err != nil {
+		return fmt.Errorf("list Pods for training run %q: %w", run.Name, err)
+	}
+
+	for _, pod := range pods.Items {
+		var scheduledAt *time.Time
+
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.PodScheduled &&
+				condition.Status == corev1.ConditionTrue {
+				t := condition.LastTransitionTime.Time
+				if !t.IsZero() {
+					scheduledAt = &t
+				}
+				break
+			}
+		}
+
+		if scheduledAt != nil && run.ScheduledAt == nil {
+			if err := registory.UpdateTrainingRunScheduledAt(
+				ctx, s.db, run.Name, *scheduledAt,
+			); err != nil {
+				return err
+			}
+			run.ScheduledAt = scheduledAt
+		}
+
+		for _, containerStatus := range pod.Status.ContainerStatuses {
+			if containerStatus.Name != "trainer" ||
+				containerStatus.State.Running == nil {
+				continue
+			}
+
+			startedAt := containerStatus.State.Running.StartedAt.Time
+			if startedAt.IsZero() || run.StartedAt != nil {
+				continue
+			}
+
+			if err := registory.UpdateTrainingRunStartedAt(
+				ctx, s.db, run.Name, startedAt,
+			); err != nil {
+				return err
+			}
+			run.StartedAt = &startedAt
+		}
+	}
+
+	return nil
 }
 
 //go:fix inline

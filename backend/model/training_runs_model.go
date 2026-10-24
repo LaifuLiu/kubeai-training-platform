@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS training_runs (
     status TEXT NOT NULL DEFAULT 'Pending',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		scheduled_at TIMESTAMPTZ,
+		started_at   TIMESTAMPTZ,
     completed_at TIMESTAMPTZ
 );
 `
@@ -28,7 +30,21 @@ INSERT INTO training_runs (
 `
 
 const GetAllTrainingRunRecordsSQL = `
-SELECT name, namespace, epochs, replicas, cpu, gpu, memory, priority, queue, status, created_at
+SELECT
+    name,
+    namespace,
+    epochs,
+    replicas,
+    cpu,
+    gpu,
+    memory,
+    priority,
+    queue,
+    status,
+    created_at,
+    updated_at,
+    scheduled_at,
+    started_at
 FROM training_runs
 ORDER BY created_at DESC
 `
@@ -42,5 +58,18 @@ const UpdateTrainingRunStatusSQL = `
 		            THEN COALESCE(completed_at, NOW())
 		        ELSE NULL
 		    END
+		WHERE name = $1
+	`
+const UpdateTrainingRunScheduledAtSQL = `
+		UPDATE training_runs
+		SET scheduled_at = COALESCE(scheduled_at, $2),
+		    updated_at = NOW()
+		WHERE name = $1
+	`
+
+const UpdateTrainingRunStartedAtSQL = ` 
+		UPDATE training_runs
+		SET started_at = COALESCE(started_at, $2),
+		    updated_at = NOW()
 		WHERE name = $1
 	`
