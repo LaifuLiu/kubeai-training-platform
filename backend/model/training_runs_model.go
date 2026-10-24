@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS training_runs (
     epochs INTEGER NOT NULL,
     replicas INTEGER NOT NULL DEFAULT 1,
     cpu TEXT NOT NULL,
+		gpu INTEGER NOT NULL DEFAULT 0,
     memory TEXT NOT NULL,
     priority TEXT NOT NULL,
     queue TEXT NOT NULL DEFAULT 'ai-training',
@@ -20,14 +21,14 @@ CREATE TABLE IF NOT EXISTS training_runs (
 
 const CreateTrainingRunRecordSQL = `
 INSERT INTO training_runs (
-			name, namespace, epochs, replicas, cpu, memory,
+			name, namespace, epochs, replicas, cpu, gpu, memory,
 			priority, queue, status
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 `
 
 const GetAllTrainingRunRecordsSQL = `
-SELECT name, namespace, epochs, replicas, cpu, memory, priority, queue, status, created_at
+SELECT name, namespace, epochs, replicas, cpu, gpu, memory, priority, queue, status, created_at
 FROM training_runs
 ORDER BY created_at DESC
 `

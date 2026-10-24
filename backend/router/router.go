@@ -15,8 +15,10 @@ type Router struct {
 
 func NewRouter(db *sql.DB) *Router {
 	server := service.NewServer(db)
+	promHandler := service.Handler()
+
 	mux := http.NewServeMux()
-	mux.Handle("GET /metrics", service.Handler())
+	mux.Handle("GET /metrics", promHandler)
 	mux.HandleFunc("POST /api/v1/training-runs", server.CreateTrainingRun)
 	mux.HandleFunc("GET /api/v1/training-runs", server.ListTrainingRuns)
 	mux.HandleFunc("GET /api/v1/training-runs/{name}", server.GetTrainingRun)

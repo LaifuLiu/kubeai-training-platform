@@ -15,6 +15,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -36,6 +37,7 @@ type CreateTrainingRunRequest struct {
 	Name     string `json:"name"`
 	Epochs   int    `json:"epochs"`
 	CPU      string `json:"cpu"`
+	GPUs     int    `json:"gpus"`
 	Memory   string `json:"memory"`
 	Priority string `json:"priority"`
 	Replicas int    `json:"replicas"`
@@ -131,12 +133,31 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateResourceQuantity("cpu", req.CPU); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := validateResourceQuantity("memory", req.Memory); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	if req.CPU == "" {
 		req.CPU = "500m"
 	}
 
 	if req.Memory == "" {
 		req.Memory = "1Gi"
+	}
+
+	if req.GPUs < 0 || req.GPUs > 8 {
+		http.Error(
+			w,
+			"gpus must be between 0 and 8 per worker",
+			http.StatusBadRequest,
+		)
+		return
 	}
 
 	if req.Priority == "" {
@@ -162,6 +183,22 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "priority must be normal or high", http.StatusBadRequest)
 		return
+	}
+
+	requests := map[string]interface{}{
+		"cpu":    req.CPU,
+		"memory": req.Memory,
+	}
+
+	limits := map[string]interface{}{
+		"cpu":    req.CPU,
+		"memory": req.Memory,
+	}
+
+	if req.GPUs > 0 {
+		gpuCount := strconv.Itoa(req.GPUs)
+		requests["nvidia.com/gpu"] = gpuCount
+		limits["nvidia.com/gpu"] = gpuCount
 	}
 
 	job := &unstructured.Unstructured{
@@ -211,14 +248,8 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 											},
 										},
 										"resources": map[string]interface{}{
-											"requests": map[string]interface{}{
-												"cpu":    req.CPU,
-												"memory": req.Memory,
-											},
-											"limits": map[string]interface{}{
-												"cpu":    req.CPU,
-												"memory": req.Memory,
-											},
+											"requests": requests,
+											"limits":   limits,
 										},
 									},
 								},
@@ -250,6 +281,7 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		Replicas:  req.Replicas,
 		CPU:       req.CPU,
 		Memory:    req.Memory,
+		GPUs:      req.GPUs,
 		Priority:  req.Priority,
 		Queue:     trainingQueue,
 		Status:    "Pending",
@@ -652,4 +684,20 @@ func volcanoJobStatus(job *unstructured.Unstructured) string {
 	default:
 		return "Pending"
 	}
+}
+
+func validateResourceQuantity(
+	name string,
+	value string,
+) error {
+	quantity, err := resource.ParseQuantity(value)
+	if err != nil {
+		return fmt.Errorf("invalid %s quantity %q: %w", name, value, err)
+	}
+
+	if quantity.Sign() <= 0 {
+		return fmt.Errorf("%s must be greater than zero", name)
+	}
+
+	return nil
 }

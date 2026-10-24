@@ -17,6 +17,7 @@ type TrainingRun struct {
 	Epochs      int        `json:"epochs"`
 	Replicas    int        `json:"replicas"`
 	CPU         string     `json:"cpu"`
+	GPUs        int        `json:"gpus"`
 	Memory      string     `json:"memory"`
 	Priority    string     `json:"priority"`
 	Queue       string     `json:"queue"`
@@ -46,6 +47,7 @@ func CreateTrainingRunRecord(ctx context.Context,
 		run.Replicas,
 		run.CPU,
 		run.Memory,
+		run.GPUs,
 		run.Priority,
 		run.Queue,
 		run.Status,
@@ -74,6 +76,7 @@ func GetAllTrainingRunRecords(ctx context.Context,
 			&run.Epochs,
 			&run.Replicas,
 			&run.CPU,
+			&run.GPUs,
 			&run.Memory,
 			&run.Priority,
 			&run.Queue,
