@@ -59,12 +59,29 @@ type TrainingRunSummary struct {
 	Active    int32     `json:"active"`
 	Succeeded int32     `json:"succeeded"`
 	Failed    int32     `json:"failed"`
+	CPU       string    `json:"cpu"`
+	Memory    string    `json:"memory"`
+	GPUs      int       `json:"gpus"`
 }
 
 type PodCounters struct {
 	Active    int32 `json:"active"`
 	Succeeded int32 `json:"succeeded"`
 	Failed    int32 `json:"failed"`
+}
+
+type NodeResources struct {
+	CPU    string `json:"cpu"`
+	Memory string `json:"memory"`
+	GPUs   string `json:"gpus"`
+}
+
+type NodeSummary struct {
+	Name          string        `json:"name"`
+	Ready         bool          `json:"ready"`
+	Unschedulable bool          `json:"unschedulable"`
+	Capacity      NodeResources `json:"capacity"`
+	Allocatable   NodeResources `json:"allocatable"`
 }
 
 var volcanoJobGVR = schema.GroupVersionResource{
@@ -353,6 +370,10 @@ func (s *Server) ListTrainingRuns(w http.ResponseWriter, r *http.Request) {
 			Status:    run.Status,
 			Replicas:  run.Replicas,
 			CreatedAt: run.CreatedAt,
+			Epochs:    strconv.Itoa(run.Epochs),
+			CPU:       run.CPU,
+			Memory:    run.Memory,
+			GPUs:      run.GPUs,
 		}
 
 		// Volcano provides live status while the Job still exists.
@@ -618,6 +639,61 @@ func (s *Server) DeleteTrainingRun(w http.ResponseWriter, r *http.Request) {
 		"status":    "deletion_requested",
 	}); err != nil {
 		log.Printf("encode delete response for %q: %v", name, err)
+	}
+}
+
+func (s *Server) ListNodes(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	nodes, err := s.client.CoreV1().Nodes().List(
+		ctx,
+		metav1.ListOptions{},
+	)
+	if err != nil {
+		log.Printf("list Kubernetes nodes: %v", err)
+		http.Error(
+			w,
+			"failed to query Kubernetes nodes",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	getResources := func(
+		resources corev1.ResourceList,
+	) NodeResources {
+		return NodeResources{
+			CPU:    resources.Cpu().String(),
+			Memory: resources.Memory().String(),
+			GPUs:   resources.Name(corev1.ResourceName("nvidia.com/gpu"), resource.DecimalSI).String(),
+		}
+	}
+
+	result := make([]NodeSummary, 0, len(nodes.Items))
+
+	for _, node := range nodes.Items {
+		ready := false
+
+		for _, condition := range node.Status.Conditions {
+			if condition.Type == corev1.NodeReady {
+				ready = condition.Status == corev1.ConditionTrue
+				break
+			}
+		}
+
+		result = append(result, NodeSummary{
+			Name:          node.Name,
+			Ready:         ready,
+			Unschedulable: node.Spec.Unschedulable,
+			Capacity:      getResources(node.Status.Capacity),
+			Allocatable:   getResources(node.Status.Allocatable),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		log.Printf("encode node summaries: %v", err)
 	}
 }
 

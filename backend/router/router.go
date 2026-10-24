@@ -24,6 +24,7 @@ func NewRouter(db *sql.DB) *Router {
 	mux.HandleFunc("GET /api/v1/training-runs/{name}", server.GetTrainingRun)
 	mux.HandleFunc("GET /api/v1/training-runs/{name}/logs", server.GetTrainingRunLogs)
 	mux.HandleFunc("DELETE /api/v1/training-runs/{name}", server.DeleteTrainingRun)
+	mux.HandleFunc("GET /api/v1/nodes", server.ListNodes)
 
 	return &Router{mux: mux}
 }
