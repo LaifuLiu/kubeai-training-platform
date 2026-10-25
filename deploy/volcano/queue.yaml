@@ -8,3 +8,23 @@ spec:
   guarantee: {}
   parent: root
   dequeueStrategy: traverse
+---
+apiVersion: scheduling.volcano.sh/v1beta1
+kind: Queue
+metadata:
+  name: ai-research
+spec:
+  parent: root
+  weight: 1
+  reclaimable: true
+  dequeueStrategy: traverse
+---
+apiVersion: scheduling.volcano.sh/v1beta1
+kind: Queue
+metadata:
+  name: ai-priority
+spec:
+  parent: root
+  weight: 2
+  reclaimable: true
+  dequeueStrategy: traverse

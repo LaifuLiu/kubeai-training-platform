@@ -185,7 +185,7 @@ func TestCreateTrainingRunSuccess(t *testing.T) {
 	s := &Server{dynamicClient: dyn, db: db}
 
 	mock.ExpectExec("INSERT INTO training_runs").
-		WithArgs("mnist", namespace, 4, 2, "1", "2Gi", "high", trainingQueue, "Pending").
+		WithArgs("mnist", namespace, 4, 2, "1", "2Gi", "high", TrainingQueue, "Pending").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	body := `{"name":"mnist","epochs":4,"cpu":"1","memory":"2Gi","priority":"high","replicas":2}`
@@ -240,7 +240,7 @@ func TestCreateTrainingRunAppliesDefaults(t *testing.T) {
 	s := &Server{dynamicClient: dyn, db: db}
 
 	mock.ExpectExec("INSERT INTO training_runs").
-		WithArgs("defaults", namespace, 1, 1, "500m", "1Gi", "normal", trainingQueue, "Pending").
+		WithArgs("defaults", namespace, 1, 1, "500m", "1Gi", "normal", TrainingQueue, "Pending").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/training-runs", strings.NewReader(`{"name":"defaults","epochs":1}`))
@@ -358,9 +358,9 @@ func TestListTrainingRunsSyncsLiveJobAndSkipsCancelled(t *testing.T) {
 	created := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	rows := sqlmock.NewRows([]string{
 		"name", "namespace", "epochs", "replicas", "cpu", "memory", "priority", "queue", "status", "created_at",
-	}).AddRow("live", namespace, 3, 1, "500m", "1Gi", "normal", trainingQueue, "Pending", created).
-		AddRow("gone", namespace, 3, 1, "500m", "1Gi", "normal", trainingQueue, "Succeeded", created).
-		AddRow("stopped", namespace, 3, 1, "500m", "1Gi", "normal", trainingQueue, "Cancelled", created)
+	}).AddRow("live", namespace, 3, 1, "500m", "1Gi", "normal", TrainingQueue, "Pending", created).
+		AddRow("gone", namespace, 3, 1, "500m", "1Gi", "normal", TrainingQueue, "Succeeded", created).
+		AddRow("stopped", namespace, 3, 1, "500m", "1Gi", "normal", TrainingQueue, "Cancelled", created)
 
 	mock.ExpectQuery("SELECT name, namespace").WillReturnRows(rows)
 	mock.ExpectExec("UPDATE training_runs").
@@ -415,7 +415,7 @@ func TestListTrainingRunsVolcanoError(t *testing.T) {
 
 	rows := sqlmock.NewRows([]string{
 		"name", "namespace", "epochs", "replicas", "cpu", "memory", "priority", "queue", "status", "created_at",
-	}).AddRow("live", namespace, 3, 1, "500m", "1Gi", "normal", trainingQueue, "Pending", time.Now())
+	}).AddRow("live", namespace, 3, 1, "500m", "1Gi", "normal", TrainingQueue, "Pending", time.Now())
 	mock.ExpectQuery("SELECT name, namespace").WillReturnRows(rows)
 
 	dyn := newDynamicClient()
@@ -442,7 +442,7 @@ func TestListTrainingRunsStatusSyncError(t *testing.T) {
 
 	rows := sqlmock.NewRows([]string{
 		"name", "namespace", "epochs", "replicas", "cpu", "memory", "priority", "queue", "status", "created_at",
-	}).AddRow("live", namespace, 3, 1, "500m", "1Gi", "normal", trainingQueue, "Pending", time.Now())
+	}).AddRow("live", namespace, 3, 1, "500m", "1Gi", "normal", TrainingQueue, "Pending", time.Now())
 	mock.ExpectQuery("SELECT name, namespace").WillReturnRows(rows)
 	mock.ExpectExec("UPDATE training_runs").WillReturnError(errors.New("write failed"))
 
@@ -470,7 +470,7 @@ func TestListTrainingRunsPodCounterError(t *testing.T) {
 
 	rows := sqlmock.NewRows([]string{
 		"name", "namespace", "epochs", "replicas", "cpu", "memory", "priority", "queue", "status", "created_at",
-	}).AddRow("live", namespace, 3, 1, "500m", "1Gi", "normal", trainingQueue, "Pending", time.Now())
+	}).AddRow("live", namespace, 3, 1, "500m", "1Gi", "normal", TrainingQueue, "Pending", time.Now())
 	mock.ExpectQuery("SELECT name, namespace").WillReturnRows(rows)
 	mock.ExpectExec("UPDATE training_runs").
 		WithArgs("live", "Running").

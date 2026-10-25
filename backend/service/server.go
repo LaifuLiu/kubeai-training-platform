@@ -41,6 +41,7 @@ type CreateTrainingRunRequest struct {
 	Memory   string `json:"memory"`
 	Priority string `json:"priority"`
 	Replicas int    `json:"replicas"`
+	Queue    string `json:"queue"`
 }
 
 type CreateTrainingRunResponse struct {
@@ -122,8 +123,19 @@ var volcanoJobGVR = schema.GroupVersionResource{
 	Resource: "jobs",
 }
 
-const trainingQueue = "ai-training"
-const namespace = "kubeai-training"
+const (
+	// queue names must match the Volcano queue names configured in the cluster.
+	TrainingQueue string = "ai-training"
+	ResearchQueue string = "ai-research"
+	PriorityQueue string = "ai-priority"
+
+	// priority class names must match the PriorityClass names configured in the cluster.
+	NormalPriority string = "kubeai-normal"
+	HighPriority   string = "kubeai-high"
+
+	// The namespace where training Jobs are created.
+	namespace string = "kubeai-training"
+)
 
 func newClients() (kubernetes.Interface, dynamic.Interface, error) {
 	config, err := rest.InClusterConfig()
@@ -222,13 +234,41 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Queue == "" {
+		req.Queue = TrainingQueue
+	}
+
+	req.Queue = strings.TrimSpace(req.Queue)
+
+	if err := validateTrainingRunResources(
+		req.Queue,
+		req.CPU,
+		req.Memory,
+		req.Replicas,
+	); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	switch req.Queue {
+	case TrainingQueue, ResearchQueue, PriorityQueue:
+		// Supported queue.
+	default:
+		http.Error(
+			w,
+			"queue must be ai-training, ai-research, or ai-priority",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
 	var priorityClassName string
 
 	switch req.Priority {
 	case "normal":
-		priorityClassName = "kubeai-normal"
+		priorityClassName = NormalPriority
 	case "high":
-		priorityClassName = "kubeai-high"
+		priorityClassName = HighPriority
 	default:
 		http.Error(w, "priority must be normal or high", http.StatusBadRequest)
 		return
@@ -263,10 +303,11 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 				},
 			},
 			"spec": map[string]interface{}{
-				"schedulerName": "volcano",
-				"queue":         trainingQueue,
-				"minAvailable":  int64(req.Replicas),
-				"maxRetry":      int64(0),
+				"schedulerName":     "volcano",
+				"queue":             req.Queue,
+				"minAvailable":      int64(req.Replicas),
+				"maxRetry":          int64(0),
+				"priorityClassName": priorityClassName,
 				"tasks": []interface{}{
 					map[string]interface{}{
 						"name":     "trainer",
@@ -315,7 +356,7 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 
 	created, err := s.dynamicClient.
 		Resource(volcanoJobGVR).
-		Namespace("kubeai-training").
+		Namespace(namespace).
 		Create(ctx, job, metav1.CreateOptions{})
 
 	if err != nil {
@@ -332,7 +373,7 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		Memory:    req.Memory,
 		GPUs:      req.GPUs,
 		Priority:  req.Priority,
-		Queue:     trainingQueue,
+		Queue:     req.Queue,
 		Status:    "Pending",
 	}
 
@@ -512,7 +553,7 @@ func (s *Server) GetTrainingRun(w http.ResponseWriter, r *http.Request) {
 
 	job, err := s.dynamicClient.
 		Resource(volcanoJobGVR).
-		Namespace("kubeai-training").
+		Namespace(namespace).
 		Get(
 			ctx,
 			name,
@@ -556,7 +597,7 @@ func (s *Server) GetTrainingRunLogs(w http.ResponseWriter, r *http.Request) {
 	// Verify that the Job exists before retrieving its logs.
 	_, err := s.dynamicClient.
 		Resource(volcanoJobGVR).
-		Namespace("kubeai-training").
+		Namespace(namespace).
 		Get(
 			ctx,
 			name,
@@ -1039,6 +1080,58 @@ func validateResourceQuantity(
 
 	if quantity.Sign() <= 0 {
 		return fmt.Errorf("%s must be greater than zero", name)
+	}
+
+	return nil
+}
+
+func validateTrainingRunResources(
+	queue string,
+	cpu string,
+	memory string,
+	replicas int,
+) error {
+	cpuQuantity, err := resource.ParseQuantity(cpu)
+	if err != nil {
+		return fmt.Errorf("invalid CPU quantity: %w", err)
+	}
+
+	memoryQuantity, err := resource.ParseQuantity(memory)
+	if err != nil {
+		return fmt.Errorf("invalid memory quantity: %w", err)
+	}
+
+	var maxCPU, maxMemory string
+
+	switch queue {
+	case TrainingQueue:
+		maxCPU, maxMemory = "4", "8Gi"
+	case ResearchQueue:
+		maxCPU, maxMemory = "2", "4Gi"
+	case PriorityQueue:
+		maxCPU, maxMemory = "4", "8Gi"
+	default:
+		return fmt.Errorf("unsupported queue %q", queue)
+	}
+
+	maxJobCPU := resource.MustParse(maxCPU)
+	maxJobMemory := resource.MustParse(maxMemory)
+
+	totalCPUMilli := cpuQuantity.MilliValue() * int64(replicas)
+	totalMemoryBytes := memoryQuantity.Value() * int64(replicas)
+
+	if totalCPUMilli > maxJobCPU.MilliValue() {
+		return fmt.Errorf(
+			"CPU request exceeds the maximum of %s across all replicas for queue %s",
+			maxCPU, queue,
+		)
+	}
+
+	if totalMemoryBytes > maxJobMemory.Value() {
+		return fmt.Errorf(
+			"memory request exceeds the maximum of %s across all replicas for queue %s",
+			maxMemory, queue,
+		)
 	}
 
 	return nil
