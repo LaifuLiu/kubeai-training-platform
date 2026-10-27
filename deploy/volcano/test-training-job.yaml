@@ -1,16 +1,16 @@
 apiVersion: batch.volcano.sh/v1alpha1
 kind: Job
 metadata:
-  name: volcano-test-training-high
+  name: volcano-test-training-hh
   namespace: kubeai-training
+  annotations:
+    volcano.sh/preemptable: "true"
   labels:
     kubeai.io/managed-by: kubeai
     kubeai.io/component: training
 spec:
   schedulerName: volcano
   queue: ai-training
-  minAvailable: 1
-  maxRetry: 0
   priorityClassName: kubeai-high
   tasks:
     - name: trainer
@@ -22,20 +22,13 @@ spec:
             kubeai.io/component: training
         spec:
           restartPolicy: Never
+          priorityClassName: kubeai-high
           containers:
             - name: busybox
               image: busybox:1.36
-              command: ["sh", "-c", "echo 'BusyBox started'; sleep 100; echo 'BusyBox finished'"]
+              command: ["sh", "-c", "echo 'BusyBox started'; sleep 500; echo 'BusyBox finished'"]
               imagePullPolicy: IfNotPresent
-              # env:
-              #   - name: EPOCHS
-              #     value: "5"
-              #   - name: SEED
-              #     value: "42"
               resources:
                 requests:
-                  cpu: "3"
+                  cpu: "3000m"
                   memory: 1Gi
-                # limits:
-                #   cpu: "2"
-                #   memory: 3Gi
