@@ -11,22 +11,23 @@ import (
 )
 
 type TrainingRun struct {
-	ID          int64      `json:"id"`
-	Name        string     `json:"name"`
-	Namespace   string     `json:"namespace"`
-	Epochs      int        `json:"epochs"`
-	Replicas    int        `json:"replicas"`
-	CPU         string     `json:"cpu"`
-	GPUs        int        `json:"gpus"`
-	Memory      string     `json:"memory"`
-	Priority    string     `json:"priority"`
-	Queue       string     `json:"queue"`
-	Status      string     `json:"status"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	UpdatedAt   time.Time  `json:"updatedAt"`
-	ScheduledAt *time.Time `json:"scheduledAt,omitempty"`
-	StartedAt   *time.Time `json:"startedAt,omitempty"`
-	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	ID           int64      `json:"id"`
+	Name         string     `json:"name"`
+	Namespace    string     `json:"namespace"`
+	Epochs       int        `json:"epochs"`
+	Replicas     int        `json:"replicas"`
+	MinAvailable int        `json:"minAvailable"`
+	CPU          string     `json:"cpu"`
+	GPUs         int        `json:"gpus"`
+	Memory       string     `json:"memory"`
+	Priority     string     `json:"priority"`
+	Queue        string     `json:"queue"`
+	Status       string     `json:"status"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	UpdatedAt    time.Time  `json:"updatedAt"`
+	ScheduledAt  *time.Time `json:"scheduledAt,omitempty"`
+	StartedAt    *time.Time `json:"startedAt,omitempty"`
+	CompletedAt  *time.Time `json:"completedAt,omitempty"`
 }
 
 func InitializeTrainingRunsSchema(
@@ -47,6 +48,7 @@ func CreateTrainingRunRecord(ctx context.Context,
 		run.Namespace,
 		run.Epochs,
 		run.Replicas,
+		run.MinAvailable,
 		run.CPU,
 		run.GPUs,
 		run.Memory,
@@ -77,6 +79,7 @@ func GetAllTrainingRunRecords(ctx context.Context,
 			&run.Namespace,
 			&run.Epochs,
 			&run.Replicas,
+			&run.MinAvailable,
 			&run.CPU,
 			&run.GPUs,
 			&run.Memory,

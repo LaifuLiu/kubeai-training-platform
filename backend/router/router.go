@@ -14,8 +14,17 @@ type Router struct {
 }
 
 func NewRouter(db *sql.DB) *Router {
-	server := service.NewServer(db)
 	promHandler := service.Handler()
+	server := service.NewServer(db)
+
+	// ctx, cancel := context.WithCancel(context.Background())
+	// defer cancel()
+
+	// go server.RunPendingTimeoutReconciler(
+	// 	ctx,
+	// 	30*time.Second,
+	// 	30*time.Minute,
+	// )
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", promHandler)

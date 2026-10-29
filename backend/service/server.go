@@ -19,6 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -34,14 +35,15 @@ type Server struct {
 }
 
 type CreateTrainingRunRequest struct {
-	Name     string `json:"name"`
-	Epochs   int    `json:"epochs"`
-	CPU      string `json:"cpu"`
-	GPUs     int    `json:"gpus"`
-	Memory   string `json:"memory"`
-	Priority string `json:"priority"`
-	Replicas int    `json:"replicas"`
-	Queue    string `json:"queue"`
+	Name         string `json:"name"`
+	Epochs       int    `json:"epochs"`
+	CPU          string `json:"cpu"`
+	GPUs         int    `json:"gpus"`
+	Memory       string `json:"memory"`
+	Priority     string `json:"priority"`
+	Replicas     int    `json:"replicas"`
+	MinAvailable int    `json:"minAvailable"`
+	Queue        string `json:"queue"`
 }
 
 type CreateTrainingRunResponse struct {
@@ -72,6 +74,7 @@ type TrainingRunSummary struct {
 	Status                string               `json:"status"`
 	Epochs                string               `json:"epochs,omitempty"`
 	Replicas              int                  `json:"replicas,omitempty"`
+	MinAvailable          int                  `json:"minAvailable,omitempty"`
 	CreatedAt             time.Time            `json:"createdAt"`
 	Active                int32                `json:"active"`
 	Succeeded             int32                `json:"succeeded"`
@@ -234,6 +237,20 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.MinAvailable == 0 {
+		req.MinAvailable = req.Replicas
+	}
+
+	if req.MinAvailable < 1 || req.MinAvailable > req.Replicas {
+		// Use the same error-response pattern as your existing validation.
+		http.Error(
+			w,
+			"minAvailable must be between 1 and replicas",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
 	if req.Queue == "" {
 		req.Queue = TrainingQueue
 	}
@@ -290,6 +307,13 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		limits["nvidia.com/gpu"] = gpuCount
 	}
 
+	masterServiceName := req.Name + "-master"
+	masterAddr := fmt.Sprintf(
+		"%s.%s.svc.cluster.local",
+		masterServiceName,
+		namespace,
+	)
+
 	job := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "batch.volcano.sh/v1alpha1",
@@ -305,7 +329,7 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 			"spec": map[string]interface{}{
 				"schedulerName":     "volcano",
 				"queue":             req.Queue,
-				"minAvailable":      int64(req.Replicas),
+				"minAvailable":      req.MinAvailable,
 				"maxRetry":          int64(0),
 				"priorityClassName": priorityClassName,
 				"tasks": []interface{}{
@@ -315,17 +339,19 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 						"template": map[string]interface{}{
 							"metadata": map[string]interface{}{
 								"labels": map[string]interface{}{
-									"kubeai.io/managed-by": "kubeai",
-									"kubeai.io/component":  "training",
+									"kubeai.io/managed-by":   "kubeai",
+									"kubeai.io/component":    "training",
+									"kubeai.io/training-run": req.Name,
 								},
 							},
 							"spec": map[string]interface{}{
+								"subdomain":         masterServiceName,
 								"restartPolicy":     "Never",
 								"priorityClassName": priorityClassName,
 								"containers": []interface{}{
 									map[string]interface{}{
 										"name":            "trainer",
-										"image":           "192.168.122.1:5000/kubeai-trainer:v0.1.0",
+										"image":           "192.168.122.1:5000/kubeai-trainer:v0.4.0",
 										"imagePullPolicy": "IfNotPresent",
 										"env": []interface{}{
 											map[string]interface{}{
@@ -335,6 +361,26 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 											map[string]interface{}{
 												"name":  "SEED",
 												"value": "42",
+											},
+											map[string]interface{}{
+												"name": "POD_NAME",
+												"valueFrom": map[string]interface{}{
+													"fieldRef": map[string]interface{}{
+														"fieldPath": "metadata.name",
+													},
+												},
+											},
+											map[string]interface{}{
+												"name":  "WORLD_SIZE",
+												"value": strconv.Itoa(req.Replicas),
+											},
+											map[string]interface{}{
+												"name":  "MASTER_ADDR",
+												"value": masterAddr,
+											},
+											map[string]interface{}{
+												"name":  "MASTER_PORT",
+												"value": "29500",
 											},
 										},
 										"resources": map[string]interface{}{
@@ -354,27 +400,86 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
+	serviceCreated := false
+
+	if req.Replicas > 1 {
+		// if err := s.createTrainingHeadlessService(ctx, req.Name); err != nil {
+		// 	log.Printf(
+		// 		"failed to create headless Service for training run %q: %v",
+		// 		req.Name,
+		// 		err,
+		// 	)
+		// 	http.Error(
+		// 		w,
+		// 		"failed to create training networking Service",
+		// 		http.StatusInternalServerError,
+		// 	)
+		// 	return
+		// }
+
+		if err := s.createTrainingMasterService(ctx, req.Name); err != nil {
+			log.Printf(
+				"failed to create Master Service for training run %q: %v",
+				req.Name,
+				err,
+			)
+			http.Error(
+				w,
+				"failed to create training networking Service",
+				http.StatusInternalServerError,
+			)
+			return // Clean up the first Service here.
+		}
+
+		serviceCreated = true
+	}
+
 	created, err := s.dynamicClient.
 		Resource(volcanoJobGVR).
 		Namespace(namespace).
 		Create(ctx, job, metav1.CreateOptions{})
 
 	if err != nil {
+		if serviceCreated {
+			cleanupCtx, cancel := context.WithTimeout(
+				context.Background(),
+				5*time.Second,
+			)
+			defer cancel()
+
+			cleanupErr := s.client.CoreV1().
+				Services(namespace).
+				Delete(
+					cleanupCtx,
+					req.Name+"-ddp",
+					metav1.DeleteOptions{},
+				)
+
+			if cleanupErr != nil {
+				log.Printf(
+					"failed to clean up headless Service for training run %q: %v",
+					req.Name,
+					cleanupErr,
+				)
+			}
+		}
+
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	run := registory.TrainingRun{
-		Name:      created.GetName(),
-		Namespace: namespace,
-		Epochs:    req.Epochs,
-		Replicas:  req.Replicas,
-		CPU:       req.CPU,
-		Memory:    req.Memory,
-		GPUs:      req.GPUs,
-		Priority:  req.Priority,
-		Queue:     req.Queue,
-		Status:    "Pending",
+		Name:         created.GetName(),
+		Namespace:    namespace,
+		Epochs:       req.Epochs,
+		Replicas:     req.Replicas,
+		MinAvailable: req.MinAvailable,
+		CPU:          req.CPU,
+		Memory:       req.Memory,
+		GPUs:         req.GPUs,
+		Priority:     req.Priority,
+		Queue:        req.Queue,
+		Status:       "Pending",
 	}
 
 	if err := registory.CreateTrainingRunRecord(ctx, s.db, run); err != nil {
@@ -438,15 +543,16 @@ func (s *Server) ListTrainingRuns(w http.ResponseWriter, r *http.Request) {
 	runs := make([]TrainingRunSummary, 0, len(runsRecords))
 	for _, run := range runsRecords {
 		summary := TrainingRunSummary{
-			Name:      run.Name,
-			Namespace: run.Namespace,
-			Status:    run.Status,
-			Replicas:  run.Replicas,
-			CreatedAt: run.CreatedAt,
-			Epochs:    strconv.Itoa(run.Epochs),
-			CPU:       run.CPU,
-			Memory:    run.Memory,
-			GPUs:      run.GPUs,
+			Name:         run.Name,
+			Namespace:    run.Namespace,
+			Status:       run.Status,
+			Replicas:     run.Replicas,
+			MinAvailable: run.MinAvailable,
+			CreatedAt:    run.CreatedAt,
+			Epochs:       strconv.Itoa(run.Epochs),
+			CPU:          run.CPU,
+			Memory:       run.Memory,
+			GPUs:         run.GPUs,
 		}
 
 		// Volcano provides live status while the Job still exists.
@@ -1036,6 +1142,210 @@ func (s *Server) syncTrainingRunTimestamps(
 	}
 
 	return nil
+}
+
+const (
+	defaultReconcileInterval = 30 * time.Second
+	defaultPendingTimeout    = 30 * time.Minute
+	defaultStartupTimeout    = 5 * time.Minute
+)
+
+// RunPendingTimeoutReconciler periodically checks for training runs
+// that have remained Pending longer than the configured timeout.
+func (s *Server) RunPendingTimeoutReconciler(
+	ctx context.Context,
+	interval time.Duration,
+	pendingTimeout time.Duration,
+) {
+	if interval <= 0 {
+		interval = defaultReconcileInterval
+	}
+	if pendingTimeout <= 0 {
+		pendingTimeout = defaultPendingTimeout
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Run once immediately, then continue periodically.
+	for {
+		if err := s.reconcilePendingTimeouts(ctx, pendingTimeout); err != nil {
+			log.Printf("pending-timeout reconciliation failed: %v", err)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *Server) reconcilePendingTimeouts(
+	ctx context.Context,
+	pendingTimeout time.Duration,
+) error {
+	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	runs, err := registory.GetAllTrainingRunRecords(checkCtx, s.db)
+	if err != nil {
+		return fmt.Errorf("list training runs: %w", err)
+	}
+
+	now := time.Now()
+
+	for _, run := range runs {
+		// Only expire runs that the database still considers Pending.
+		if run.Status != "Pending" {
+			continue
+		}
+
+		if now.Sub(run.CreatedAt) < pendingTimeout {
+			continue
+		}
+
+		jobClient := s.dynamicClient.
+			Resource(volcanoJobGVR).
+			Namespace(run.Namespace)
+
+		job, err := jobClient.Get(
+			checkCtx,
+			run.Name,
+			metav1.GetOptions{},
+		)
+
+		if err == nil {
+			// Do not time out a job that Volcano has already started.
+			if volcanoJobStatus(job) != "Pending" {
+				continue
+			}
+
+			// Only delete Jobs managed by this platform.
+			labels := job.GetLabels()
+			if labels["kubeai.io/managed-by"] != "kubeai" {
+				log.Printf(
+					"skip timeout cleanup for unmanaged Job %q",
+					run.Name,
+				)
+				continue
+			}
+
+			deleteErr := jobClient.Delete(
+				checkCtx,
+				run.Name,
+				metav1.DeleteOptions{},
+			)
+			if deleteErr != nil &&
+				!apierrors.IsNotFound(deleteErr) {
+				log.Printf(
+					"delete timed-out Job %q: %v",
+					run.Name,
+					deleteErr,
+				)
+				continue
+			}
+		} else if !apierrors.IsNotFound(err) {
+			log.Printf(
+				"get Job %q during timeout check: %v",
+				run.Name,
+				err,
+			)
+			continue
+		}
+
+		// If the Job was already absent, or its deletion was accepted,
+		// record the timeout. A database error will be retried next cycle.
+		if err := registory.UpdateTrainingRunStatus(
+			checkCtx,
+			s.db,
+			run.Name,
+			"TimedOut",
+		); err != nil {
+			log.Printf(
+				"update timed-out status for %q: %v",
+				run.Name,
+				err,
+			)
+			continue
+		}
+
+		log.Printf(
+			"training run %q timed out after %s",
+			run.Name,
+			pendingTimeout,
+		)
+	}
+
+	return nil
+}
+
+func (s *Server) createTrainingHeadlessService(
+	ctx context.Context,
+	runName string,
+) error {
+	serviceName := runName + "-ddp"
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serviceName,
+			Namespace: namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP:                "None",
+			PublishNotReadyAddresses: true,
+			Selector: map[string]string{
+				"kubeai.io/training-run": runName,
+			},
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "distributed",
+					Port:       29500,
+					TargetPort: intstr.FromInt32(29500),
+				},
+			},
+		},
+	}
+
+	_, err := s.client.CoreV1().
+		Services(namespace).
+		Create(ctx, service, metav1.CreateOptions{})
+
+	return err
+}
+
+func (s *Server) createTrainingMasterService(
+	ctx context.Context,
+	runName string,
+) error {
+	serviceName := runName + "-master"
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serviceName,
+			Namespace: namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP:                "None",
+			PublishNotReadyAddresses: true,
+			Selector: map[string]string{
+				"kubeai.io/training-run": runName,
+				"volcano.sh/task-index":  "0",
+			},
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "distributed",
+					Port:       29500,
+					TargetPort: intstr.FromInt32(29500),
+				},
+			},
+		},
+	}
+
+	_, err := s.client.CoreV1().Services(namespace).Create(
+		ctx, service, metav1.CreateOptions{},
+	)
+	return err
 }
 
 //go:fix inline

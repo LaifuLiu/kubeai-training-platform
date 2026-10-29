@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS training_runs (
     namespace TEXT NOT NULL DEFAULT 'kubeai-training',
     epochs INTEGER NOT NULL,
     replicas INTEGER NOT NULL DEFAULT 1,
+		min_available INTEGER NOT NULL DEFAULT 1,
     cpu TEXT NOT NULL,
 		gpu INTEGER NOT NULL DEFAULT 0,
     memory TEXT NOT NULL,
@@ -23,10 +24,10 @@ CREATE TABLE IF NOT EXISTS training_runs (
 
 const CreateTrainingRunRecordSQL = `
 INSERT INTO training_runs (
-			name, namespace, epochs, replicas, cpu, gpu, memory,
+			name, namespace, epochs, replicas, min_available, cpu, gpu, memory,
 			priority, queue, status
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 `
 
 const GetAllTrainingRunRecordsSQL = `
@@ -35,6 +36,7 @@ SELECT
     namespace,
     epochs,
     replicas,
+    min_available,
     cpu,
     gpu,
     memory,
