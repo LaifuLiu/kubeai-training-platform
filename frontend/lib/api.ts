@@ -2,7 +2,7 @@ const baseUrl = process.env.BACKEND_API_URL || "http://localhost:8080";
 
 export async function fetchFromBackend(
   endpoint: string,
-  options?: RequestInit,
+  options: RequestInit & { parseAs?: "json" | "text" } = {},
 ) {
   const url = `${baseUrl}/${endpoint}`;
 
@@ -19,6 +19,12 @@ export async function fetchFromBackend(
 
     if (!response.ok) {
       throw new Error(`Backend responded with status: ${response.status}`);
+    }
+
+    // Handle plain text responses (e.g., logs)
+    const { parseAs } = options;
+    if (parseAs === "text") {
+      return response.text();
     }
 
     return await response.json();

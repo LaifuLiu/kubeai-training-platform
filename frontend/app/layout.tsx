@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import Header from "@/components/blocks/header";
 import { Provider } from "@/components/blocks/provider";
 import { Toaster } from "@/components/ui/toast";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -39,10 +40,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <Provider>
-          <main className="min-h-screen pt-0 py-10">
-            <Header />
-            <div className="mx-auto max-w-6xl min-w-6xl">{children}</div>
-          </main>
+          <TooltipProvider>
+            <main className="min-h-screen pt-0 py-10">
+              <Header />
+              <div className="mx-auto max-w-6xl min-w-6xl mt-10">
+                {children}
+              </div>
+            </main>
+          </TooltipProvider>
           <Toaster />
         </Provider>
       </body>

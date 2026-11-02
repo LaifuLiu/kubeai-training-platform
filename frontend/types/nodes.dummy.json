@@ -1,0 +1,47 @@
+[
+  {
+    "name": "liu-laifu-gem12",
+    "ready": true,
+    "unschedulable": false,
+    "capacity": {
+      "cpu": "16",
+      "memory": "31637120Ki",
+      "gpus": "0"
+    },
+    "allocatable": {
+      "cpu": "16",
+      "memory": "31534720Ki",
+      "gpus": "0"
+    }
+  },
+  {
+    "name": "worker1",
+    "ready": true,
+    "unschedulable": false,
+    "capacity": {
+      "cpu": "4",
+      "memory": "7602220Ki",
+      "gpus": "0"
+    },
+    "allocatable": {
+      "cpu": "4",
+      "memory": "7499820Ki",
+      "gpus": "0"
+    }
+  },
+  {
+    "name": "worker2",
+    "ready": true,
+    "unschedulable": false,
+    "capacity": {
+      "cpu": "4",
+      "memory": "7602180Ki",
+      "gpus": "0"
+    },
+    "allocatable": {
+      "cpu": "4",
+      "memory": "7499780Ki",
+      "gpus": "0"
+    }
+  }
+]

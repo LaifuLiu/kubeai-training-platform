@@ -109,14 +109,14 @@ export function BugReportForm() {
   }
 
   return (
-    <Card className="w-full ring-0 bg-dark">
-      <CardHeader className="border-b px-0">
+    <Card className="w-full">
+      <CardHeader className="border-b">
         <CardTitle>Create training run</CardTitle>
         <CardDescription>
           Create a new training run by submitting form
         </CardDescription>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent>
         <form
           id="form-create-training-run"
           onSubmit={form.handleSubmit(onSubmit)}
@@ -382,7 +382,7 @@ export function BugReportForm() {
           </FieldGroup>
         </form>
       </CardContent>
-      <CardFooter className="px-0">
+      <CardFooter>
         <Field orientation="horizontal" className="justify-between">
           <Button type="submit" form="form-create-training-run">
             Start training
