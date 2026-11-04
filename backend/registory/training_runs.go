@@ -64,8 +64,14 @@ func CreateTrainingRunRecord(ctx context.Context,
 }
 
 func GetAllTrainingRunRecords(ctx context.Context,
-	db *sql.DB) ([]TrainingRun, error) {
-	rows, err := db.QueryContext(ctx, model.GetAllTrainingRunRecordsSQL)
+	db *sql.DB, page int, size int) ([]TrainingRun, error) {
+	if page < 1 || size < 1 {
+		return nil, fmt.Errorf("invalid pagination parameters: page and size must be positive")
+	}
+
+	offset := (page - 1) * size
+
+	rows, err := db.QueryContext(ctx, model.GetAllTrainingRunRecordsSQL, size, offset)
 	if err != nil {
 		return nil, fmt.Errorf("query training run records: %w", err)
 	}
@@ -101,6 +107,24 @@ func GetAllTrainingRunRecords(ctx context.Context,
 	}
 
 	return runs, nil
+}
+
+func CountTrainingRunRecords(
+	ctx context.Context,
+	db *sql.DB,
+) (int, error) {
+	var total int
+
+	err := db.QueryRowContext(
+		ctx,
+		model.CountTrainingRunRecordsSQL,
+	).Scan(&total)
+
+	if err != nil {
+		return 0, fmt.Errorf("count training run records: %w", err)
+	}
+
+	return total, nil
 }
 
 func UpdateTrainingRunStatus(ctx context.Context,

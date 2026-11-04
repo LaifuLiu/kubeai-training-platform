@@ -105,7 +105,7 @@ func TestGetAllTrainingRunRecords(t *testing.T) {
 
 	mock.ExpectQuery("SELECT name, namespace").WillReturnRows(rows)
 
-	got, err := GetAllTrainingRunRecords(context.Background(), db)
+	got, err := GetAllTrainingRunRecords(context.Background(), db, 100, 0)
 	if err != nil {
 		t.Fatalf("GetAllTrainingRunRecords: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestGetAllTrainingRunRecordsQueryError(t *testing.T) {
 
 	mock.ExpectQuery("SELECT name, namespace").WillReturnError(errors.New("connection reset"))
 
-	_, err = GetAllTrainingRunRecords(context.Background(), db)
+	_, err = GetAllTrainingRunRecords(context.Background(), db, 100, 0)
 	if err == nil || !strings.Contains(err.Error(), "query training run records") {
 		t.Fatalf("error = %v", err)
 	}
@@ -145,7 +145,7 @@ func TestGetAllTrainingRunRecordsScanError(t *testing.T) {
 
 	mock.ExpectQuery("SELECT name, namespace").WillReturnRows(rows)
 
-	_, err = GetAllTrainingRunRecords(context.Background(), db)
+	_, err = GetAllTrainingRunRecords(context.Background(), db, 100, 0)
 	if err == nil || !strings.Contains(err.Error(), "scan training run record") {
 		t.Fatalf("error = %v", err)
 	}

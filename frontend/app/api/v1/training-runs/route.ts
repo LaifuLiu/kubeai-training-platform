@@ -1,10 +1,18 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { fetchFromBackend } from "@/lib/api";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // This calls your backend: e.g., http://localhost:8080/api/v1/training-runs
-    const res = await fetchFromBackend("api/v1/training-runs");
+    // Read pagination parameters from the frontend request
+    const searchParams = request.nextUrl.searchParams;
+
+    const page = searchParams.get("page") ?? "1";
+    const size = searchParams.get("size") ?? "10";
+
+    // Forward them to the Go backend
+    const res = await fetchFromBackend(
+      `api/v1/training-runs?page=${page}&size=${size}`,
+    );
 
     return NextResponse.json(res);
   } catch (error) {

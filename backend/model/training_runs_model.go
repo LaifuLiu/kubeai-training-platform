@@ -48,7 +48,13 @@ SELECT
     scheduled_at,
     started_at
 FROM training_runs
-ORDER BY created_at DESC
+ORDER BY created_at DESC, name ASC
+LIMIT $1 OFFSET $2
+`
+
+const CountTrainingRunRecordsSQL = `
+SELECT COUNT(*)
+FROM training_runs
 `
 
 const UpdateTrainingRunStatusSQL = `

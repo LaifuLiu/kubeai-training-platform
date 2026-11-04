@@ -1,343 +1,351 @@
-[
-  {
-    "name": "ddp-test-6",
-    "namespace": "kubeai-training",
-    "status": "Succeeded",
-    "epochs": "1000",
-    "replicas": 8,
-    "minAvailable": 2,
-    "createdAt": "2026-10-29T14:27:38.65178+08:00",
-    "active": 0,
-    "succeeded": 8,
-    "failed": 0,
-    "cpu": "500m",
-    "memory": "1Gi",
-    "gpus": 0,
-    "scheduledAt": "2026-10-29T14:27:40+08:00",
-    "queueWaitSeconds": 1.34822,
-    "pods": [
-      {
-        "name": "ddp-test-6-trainer-0",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
+{
+  "data": [
+    {
+      "name": "ddp-test-6",
+      "namespace": "kubeai-training",
+      "status": "Succeeded",
+      "epochs": "1000",
+      "replicas": 8,
+      "minAvailable": 2,
+      "createdAt": "2026-10-29T14:27:38.65178+08:00",
+      "active": 0,
+      "succeeded": 8,
+      "failed": 0,
+      "cpu": "500m",
+      "memory": "1Gi",
+      "gpus": 0,
+      "scheduledAt": "2026-10-29T14:27:40+08:00",
+      "queueWaitSeconds": 1.34822,
+      "pods": [
+        {
+          "name": "ddp-test-6-trainer-0",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-6-trainer-1",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-6-trainer-2",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-6-trainer-3",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-6-trainer-4",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-6-trainer-5",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-6-trainer-6",
+          "phase": "Succeeded",
+          "nodeName": "worker2",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-6-trainer-7",
+          "phase": "Succeeded",
+          "nodeName": "worker2",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
         }
-      },
-      {
-        "name": "ddp-test-6-trainer-1",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
+      ]
+    },
+    {
+      "name": "ddp-test-5",
+      "namespace": "kubeai-training",
+      "status": "Succeeded",
+      "epochs": "10",
+      "replicas": 8,
+      "minAvailable": 2,
+      "createdAt": "2026-10-29T14:27:10.144079+08:00",
+      "active": 0,
+      "succeeded": 8,
+      "failed": 0,
+      "cpu": "500m",
+      "memory": "1Gi",
+      "gpus": 0,
+      "scheduledAt": "2026-10-29T14:27:11+08:00",
+      "queueWaitSeconds": 0.855921,
+      "pods": [
+        {
+          "name": "ddp-test-5-trainer-0",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-5-trainer-1",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-5-trainer-2",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-5-trainer-3",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-5-trainer-4",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-5-trainer-5",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-5-trainer-6",
+          "phase": "Succeeded",
+          "nodeName": "worker2",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-5-trainer-7",
+          "phase": "Succeeded",
+          "nodeName": "worker2",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
         }
-      },
-      {
-        "name": "ddp-test-6-trainer-2",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
+      ]
+    },
+    {
+      "name": "ddp-test-4",
+      "namespace": "kubeai-training",
+      "status": "Succeeded",
+      "epochs": "10",
+      "replicas": 2,
+      "minAvailable": 2,
+      "createdAt": "2026-10-29T14:23:13.106896+08:00",
+      "active": 0,
+      "succeeded": 2,
+      "failed": 0,
+      "cpu": "500m",
+      "memory": "1Gi",
+      "gpus": 0,
+      "scheduledAt": "2026-10-29T14:23:14+08:00",
+      "queueWaitSeconds": 0.893104,
+      "pods": [
+        {
+          "name": "ddp-test-4-trainer-0",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "ddp-test-4-trainer-1",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "gpus": "0"
+          }
         }
-      },
-      {
-        "name": "ddp-test-6-trainer-3",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
+      ]
+    },
+    {
+      "name": "ddp-test-3",
+      "namespace": "kubeai-training",
+      "status": "Pending",
+      "epochs": "10",
+      "replicas": 2,
+      "minAvailable": 2,
+      "createdAt": "2026-10-29T13:48:07.098368+08:00",
+      "active": 0,
+      "succeeded": 0,
+      "failed": 0,
+      "cpu": "500m",
+      "memory": "1Gi",
+      "gpus": 0
+    },
+    {
+      "name": "ddp-test-2",
+      "namespace": "kubeai-training",
+      "status": "Pending",
+      "epochs": "10",
+      "replicas": 2,
+      "minAvailable": 2,
+      "createdAt": "2026-10-29T13:39:36.484631+08:00",
+      "active": 0,
+      "succeeded": 0,
+      "failed": 0,
+      "cpu": "500m",
+      "memory": "1Gi",
+      "gpus": 0
+    },
+    {
+      "name": "ddp-test-1",
+      "namespace": "kubeai-training",
+      "status": "Pending",
+      "epochs": "10",
+      "replicas": 2,
+      "minAvailable": 2,
+      "createdAt": "2026-10-29T13:29:07.556+08:00",
+      "active": 0,
+      "succeeded": 0,
+      "failed": 0,
+      "cpu": "500m",
+      "memory": "1Gi",
+      "gpus": 0
+    },
+    {
+      "name": "gang-test-4",
+      "namespace": "kubeai-training",
+      "status": "Succeeded",
+      "epochs": "1",
+      "replicas": 4,
+      "minAvailable": 4,
+      "createdAt": "2026-10-27T10:17:28.250321+08:00",
+      "active": 0,
+      "succeeded": 4,
+      "failed": 0,
+      "cpu": "500m",
+      "memory": "512Mi",
+      "gpus": 0,
+      "scheduledAt": "2026-10-27T10:17:29+08:00",
+      "queueWaitSeconds": 0.749679,
+      "pods": [
+        {
+          "name": "gang-test-4-trainer-0",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "512Mi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "gang-test-4-trainer-1",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "512Mi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "gang-test-4-trainer-2",
+          "phase": "Succeeded",
+          "nodeName": "worker2",
+          "requests": {
+            "cpu": "500m",
+            "memory": "512Mi",
+            "gpus": "0"
+          }
+        },
+        {
+          "name": "gang-test-4-trainer-3",
+          "phase": "Succeeded",
+          "nodeName": "worker1",
+          "requests": {
+            "cpu": "500m",
+            "memory": "512Mi",
+            "gpus": "0"
+          }
         }
-      },
-      {
-        "name": "ddp-test-6-trainer-4",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
-        }
-      },
-      {
-        "name": "ddp-test-6-trainer-5",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
-        }
-      },
-      {
-        "name": "ddp-test-6-trainer-6",
-        "phase": "Succeeded",
-        "nodeName": "worker2",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
-        }
-      },
-      {
-        "name": "ddp-test-6-trainer-7",
-        "phase": "Succeeded",
-        "nodeName": "worker2",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
-        }
-      }
-    ]
-  },
-  {
-    "name": "ddp-test-5",
-    "namespace": "kubeai-training",
-    "status": "Succeeded",
-    "epochs": "10",
-    "replicas": 8,
-    "minAvailable": 2,
-    "createdAt": "2026-10-29T14:27:10.144079+08:00",
-    "active": 0,
-    "succeeded": 8,
-    "failed": 0,
-    "cpu": "500m",
-    "memory": "1Gi",
-    "gpus": 0,
-    "scheduledAt": "2026-10-29T14:27:11+08:00",
-    "queueWaitSeconds": 0.855921,
-    "pods": [
-      {
-        "name": "ddp-test-5-trainer-0",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
-        }
-      },
-      {
-        "name": "ddp-test-5-trainer-1",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
-        }
-      },
-      {
-        "name": "ddp-test-5-trainer-2",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
-        }
-      },
-      {
-        "name": "ddp-test-5-trainer-3",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
-        }
-      },
-      {
-        "name": "ddp-test-5-trainer-4",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
-        }
-      },
-      {
-        "name": "ddp-test-5-trainer-5",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
-        }
-      },
-      {
-        "name": "ddp-test-5-trainer-6",
-        "phase": "Succeeded",
-        "nodeName": "worker2",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
-        }
-      },
-      {
-        "name": "ddp-test-5-trainer-7",
-        "phase": "Succeeded",
-        "nodeName": "worker2",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
-        }
-      }
-    ]
-  },
-  {
-    "name": "ddp-test-4",
-    "namespace": "kubeai-training",
-    "status": "Succeeded",
-    "epochs": "10",
-    "replicas": 2,
-    "minAvailable": 2,
-    "createdAt": "2026-10-29T14:23:13.106896+08:00",
-    "active": 0,
-    "succeeded": 2,
-    "failed": 0,
-    "cpu": "500m",
-    "memory": "1Gi",
-    "gpus": 0,
-    "scheduledAt": "2026-10-29T14:23:14+08:00",
-    "queueWaitSeconds": 0.893104,
-    "pods": [
-      {
-        "name": "ddp-test-4-trainer-0",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
-        }
-      },
-      {
-        "name": "ddp-test-4-trainer-1",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "1Gi",
-          "gpus": "0"
-        }
-      }
-    ]
-  },
-  {
-    "name": "ddp-test-3",
-    "namespace": "kubeai-training",
-    "status": "Pending",
-    "epochs": "10",
-    "replicas": 2,
-    "minAvailable": 2,
-    "createdAt": "2026-10-29T13:48:07.098368+08:00",
-    "active": 0,
-    "succeeded": 0,
-    "failed": 0,
-    "cpu": "500m",
-    "memory": "1Gi",
-    "gpus": 0
-  },
-  {
-    "name": "ddp-test-2",
-    "namespace": "kubeai-training",
-    "status": "Pending",
-    "epochs": "10",
-    "replicas": 2,
-    "minAvailable": 2,
-    "createdAt": "2026-10-29T13:39:36.484631+08:00",
-    "active": 0,
-    "succeeded": 0,
-    "failed": 0,
-    "cpu": "500m",
-    "memory": "1Gi",
-    "gpus": 0
-  },
-  {
-    "name": "ddp-test-1",
-    "namespace": "kubeai-training",
-    "status": "Pending",
-    "epochs": "10",
-    "replicas": 2,
-    "minAvailable": 2,
-    "createdAt": "2026-10-29T13:29:07.556+08:00",
-    "active": 0,
-    "succeeded": 0,
-    "failed": 0,
-    "cpu": "500m",
-    "memory": "1Gi",
-    "gpus": 0
-  },
-  {
-    "name": "gang-test-4",
-    "namespace": "kubeai-training",
-    "status": "Succeeded",
-    "epochs": "1",
-    "replicas": 4,
-    "minAvailable": 4,
-    "createdAt": "2026-10-27T10:17:28.250321+08:00",
-    "active": 0,
-    "succeeded": 4,
-    "failed": 0,
-    "cpu": "500m",
-    "memory": "512Mi",
-    "gpus": 0,
-    "scheduledAt": "2026-10-27T10:17:29+08:00",
-    "queueWaitSeconds": 0.749679,
-    "pods": [
-      {
-        "name": "gang-test-4-trainer-0",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "512Mi",
-          "gpus": "0"
-        }
-      },
-      {
-        "name": "gang-test-4-trainer-1",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "512Mi",
-          "gpus": "0"
-        }
-      },
-      {
-        "name": "gang-test-4-trainer-2",
-        "phase": "Succeeded",
-        "nodeName": "worker2",
-        "requests": {
-          "cpu": "500m",
-          "memory": "512Mi",
-          "gpus": "0"
-        }
-      },
-      {
-        "name": "gang-test-4-trainer-3",
-        "phase": "Succeeded",
-        "nodeName": "worker1",
-        "requests": {
-          "cpu": "500m",
-          "memory": "512Mi",
-          "gpus": "0"
-        }
-      }
-    ]
+      ]
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "size": 10,
+    "total": 7,
+    "total_pages": 1
   }
-]
+}

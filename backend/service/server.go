@@ -120,6 +120,18 @@ type NodeSummary struct {
 	Allocatable   NodeResources `json:"allocatable"`
 }
 
+type Pagination struct {
+	Page       int `json:"page"`
+	Size       int `json:"size"`
+	Total      int `json:"total"`
+	TotalPages int `json:"total_pages"`
+}
+
+type TrainingRunsResponse struct {
+	Data       []TrainingRunSummary `json:"data"`
+	Pagination Pagination           `json:"pagination"`
+}
+
 var volcanoJobGVR = schema.GroupVersionResource{
 	Group:    "batch.volcano.sh",
 	Version:  "v1alpha1",
@@ -533,10 +545,23 @@ func (s *Server) ListTrainingRuns(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	runsRecords, err := registory.GetAllTrainingRunRecords(ctx, s.db)
+	page, size, err := parsePagination(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	runsRecords, err := registory.GetAllTrainingRunRecords(ctx, s.db, page, size)
 	if err != nil {
 		log.Printf("query training run records: %v", err)
 		http.Error(w, "failed to query training run records", http.StatusInternalServerError)
+		return
+	}
+
+	total, err := registory.CountTrainingRunRecords(ctx, s.db)
+	if err != nil {
+		log.Printf("count training run records: %v", err)
+		http.Error(w, "failed to count training run records", http.StatusInternalServerError)
 		return
 	}
 
@@ -641,8 +666,20 @@ func (s *Server) ListTrainingRuns(w http.ResponseWriter, r *http.Request) {
 		runs = append(runs, summary)
 	}
 
+	totalPages := (total + size - 1) / size
+
+	response := TrainingRunsResponse{
+		Data: runs,
+		Pagination: Pagination{
+			Page:       page,
+			Size:       size,
+			Total:      total,
+			TotalPages: totalPages,
+		},
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(runs); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("encode training runs: %v", err)
 	}
 }
@@ -1169,7 +1206,7 @@ func (s *Server) RunPendingTimeoutReconciler(
 
 	// Run once immediately, then continue periodically.
 	for {
-		if err := s.reconcilePendingTimeouts(ctx, pendingTimeout); err != nil {
+		if err := s.reconcilePendingTimeouts(ctx, pendingTimeout, 100, 0); err != nil {
 			log.Printf("pending-timeout reconciliation failed: %v", err)
 		}
 
@@ -1181,14 +1218,41 @@ func (s *Server) RunPendingTimeoutReconciler(
 	}
 }
 
+func parsePagination(r *http.Request) (int, int, error) {
+	page := 1
+	size := 10
+
+	log.Printf("value page=%s, size=%s", r.URL.Query().Get("page"), r.URL.Query().Get("size"))
+
+	if value := r.URL.Query().Get("page"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 {
+			return 0, 0, fmt.Errorf("page must be a positive integer")
+		}
+		page = parsed
+	}
+
+	if value := r.URL.Query().Get("size"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 || parsed > 100 {
+			return 0, 0, fmt.Errorf("size must be between 1 and 100")
+		}
+		size = parsed
+	}
+
+	return page, size, nil
+}
+
 func (s *Server) reconcilePendingTimeouts(
 	ctx context.Context,
 	pendingTimeout time.Duration,
+	size int,
+	offset int,
 ) error {
 	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	runs, err := registory.GetAllTrainingRunRecords(checkCtx, s.db)
+	runs, err := registory.GetAllTrainingRunRecords(checkCtx, s.db, size, offset)
 	if err != nil {
 		return fmt.Errorf("list training runs: %w", err)
 	}

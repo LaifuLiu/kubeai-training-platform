@@ -1,7 +1,12 @@
 export interface TrainingRuns {
+  data: Datum[];
+  pagination: Pagination;
+}
+
+export interface Datum {
   name: string;
   namespace: string;
-  status: Phase;
+  status: string;
   epochs: string;
   replicas: number;
   minAvailable: number;
@@ -20,13 +25,8 @@ export interface TrainingRuns {
 export interface Pod {
   name: string;
   phase: Phase;
-  nodeName: NodeName;
+  nodeName: string;
   requests: Requests;
-}
-
-export enum NodeName {
-  Worker1 = "worker1",
-  Worker2 = "worker2",
 }
 
 export enum Phase {
@@ -37,4 +37,11 @@ export interface Requests {
   cpu: string;
   memory: string;
   gpus: string;
+}
+
+export interface Pagination {
+  page: number;
+  size: number;
+  total: number;
+  total_pages: number;
 }
