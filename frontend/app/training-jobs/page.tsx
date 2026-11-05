@@ -15,7 +15,6 @@ import { useTrainingRuns } from "@/hooks/use-training-runs";
 import { Button } from "@/components/ui/button";
 import { TrainingRunsPagination } from "@/components/blocks/training-runs-pagination";
 import { usePagination } from "@/hooks/use-pagination";
-import { useEffect, useState } from "react";
 
 export default function Page() {
   const { page, changePage, size } = usePagination({
@@ -26,12 +25,6 @@ export default function Page() {
     initialPage: page,
     initialSize: size,
   });
-
-  const [totalPages, setTotalPages] = useState(0);
-
-  useEffect(() => {
-    setTotalPages(data?.pagination.total_pages ?? 0);
-  }, [data?.pagination.total_pages]);
 
   return (
     <Card>
@@ -98,7 +91,7 @@ export default function Page() {
                 <TrainingRunsPagination
                   changePage={changePage}
                   page={page}
-                  totalPages={totalPages}
+                  totalPages={data?.pagination.total_pages ?? 0}
                 />
               </TableCell>
             </TableRow>
