@@ -1,30 +1,26 @@
 package router
 
 import (
-	"database/sql"
+	"context"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/LaifuLiu/kubeai-training-platform/backend/middleware"
+	"github.com/LaifuLiu/kubeai-training-platform/backend/registory"
 	"github.com/LaifuLiu/kubeai-training-platform/backend/service"
 )
 
 type Router struct {
-	mux *http.ServeMux
+	mux    *http.ServeMux
+	server *service.Server
 }
 
-func NewRouter(db *sql.DB) *Router {
+func NewRouter(repo *registory.TrainingRunRepo) *Router {
 	promHandler := service.Handler()
-	server := service.NewServer(db)
-
-	// ctx, cancel := context.WithCancel(context.Background())
-	// defer cancel()
-
-	// go server.RunPendingTimeoutReconciler(
-	// 	ctx,
-	// 	30*time.Second,
-	// 	30*time.Minute,
-	// )
+	server := service.NewServer(repo)
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", promHandler)
@@ -35,13 +31,23 @@ func NewRouter(db *sql.DB) *Router {
 	mux.HandleFunc("DELETE /api/v1/training-runs/{name}", server.DeleteTrainingRun)
 	mux.HandleFunc("GET /api/v1/nodes", server.ListNodes)
 
-	return &Router{mux: mux}
+	return &Router{mux: mux, server: server}
 }
 
 func (r *Router) Run(port string) {
 	log.Println("KubeAI API listening on :" + port)
 
 	handler := middleware.Metrics(middleware.Cors(r.mux))
+
+	// Create an application-level context.
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	go r.server.RunReconciler(ctx)
 
 	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatal(err)

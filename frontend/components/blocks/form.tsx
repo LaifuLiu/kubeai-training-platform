@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/select";
 
 export const QUEUES = ["ai-training", "ai-research", "ai-priority"] as const;
-export const PRIORITY = ["kubeai-normal", "kubeai-high"] as const;
+export const PRIORITY = ["normal", "high"] as const;
 
 const QueueItems: { label: string; value: (typeof QUEUES)[number] }[] = [
   { label: "ai-training", value: "ai-training" },
@@ -43,8 +43,8 @@ const QueueItems: { label: string; value: (typeof QUEUES)[number] }[] = [
 ];
 
 const PriorityItems: { label: string; value: (typeof PRIORITY)[number] }[] = [
-  { label: "kubeai-normal", value: "kubeai-normal" },
-  { label: "kubeai-high", value: "kubeai-high" },
+  { label: "kubeai-normal", value: "normal" },
+  { label: "kubeai-high", value: "high" },
 ];
 
 const ReplicasItems = (() => {
@@ -91,7 +91,7 @@ export function BugReportForm() {
       name: "",
       epochs: 1,
       queue: "ai-training",
-      priority: "kubeai-normal",
+      priority: "normal",
       replicas: 1,
       minAvailable: 1,
       cpu: "",

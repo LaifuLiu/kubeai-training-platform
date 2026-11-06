@@ -31,12 +31,13 @@ func main() {
 	}
 	defer db.Close()
 
-	if err := registory.InitializeTrainingRunsSchema(dbCtx, db); err != nil {
+	repo := registory.NewTrainingRunRepo(db)
+	if err := repo.InitializeTrainingRunsSchema(dbCtx); err != nil {
 		log.Fatalf("schema initialization failed: %v", err)
 	}
 
 	log.Println("PostgreSQL connected; training_runs schema initialized")
 
-	r := router.NewRouter(db)
+	r := router.NewRouter(repo)
 	r.Run("8080")
 }

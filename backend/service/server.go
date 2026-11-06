@@ -2,8 +2,8 @@ package service
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -29,9 +29,9 @@ import (
 )
 
 type Server struct {
-	client        kubernetes.Interface
-	dynamicClient dynamic.Interface
-	db            *sql.DB
+	client        kubernetes.Interface       // for k8s resources like Pods, Services, etc.
+	dynamicClient dynamic.Interface          // for volcano Job resources
+	repo          *registory.TrainingRunRepo // for database operations related to training runs
 }
 
 type CreateTrainingRunRequest struct {
@@ -67,6 +67,26 @@ type TrainingPodSummary struct {
 	Requests       PodResourceRequests  `json:"requests"`
 	Usage          *PodResourceRequests `json:"usage,omitempty"`
 }
+
+type VolcanoJobPhase string
+
+const (
+	VolcanoJobPending   VolcanoJobPhase = "Pending"
+	VolcanoJobRunning   VolcanoJobPhase = "Running"
+	VolcanoJobCompleted VolcanoJobPhase = "Completed"
+	VolcanoJobFailed    VolcanoJobPhase = "Failed"
+	VolcanoJobUnknown   VolcanoJobPhase = "Unknown"
+)
+
+type TrainingRunPhase string
+
+const (
+	TrainingRunPending   TrainingRunPhase = "Pending"
+	TrainingRunRunning   TrainingRunPhase = "Running"
+	TrainingRunSucceeded TrainingRunPhase = "Succeeded"
+	TrainingRunFailed    TrainingRunPhase = "Failed"
+	TrainingRunCancelled TrainingRunPhase = "Cancelled"
+)
 
 type TrainingRunSummary struct {
 	Name                  string               `json:"name"`
@@ -150,6 +170,10 @@ const (
 
 	// The namespace where training Jobs are created.
 	namespace string = "kubeai-training"
+
+	// These constants define the default intervals and timeouts for the training run reconciler.
+	defaultReconcileInterval = 30 * time.Second
+	defaultPendingTimeout    = 30 * time.Minute
 )
 
 func newClients() (kubernetes.Interface, dynamic.Interface, error) {
@@ -177,7 +201,7 @@ func newClients() (kubernetes.Interface, dynamic.Interface, error) {
 	return clientset, dynamicClient, nil
 }
 
-func NewServer(db *sql.DB) *Server {
+func NewServer(repo *registory.TrainingRunRepo) *Server {
 	clientset, dynamicClient, err := newClients()
 	if err != nil {
 		log.Fatal(err)
@@ -186,7 +210,7 @@ func NewServer(db *sql.DB) *Server {
 	return &Server{
 		client:        clientset,
 		dynamicClient: dynamicClient,
-		db:            db,
+		repo:          repo,
 	}
 
 }
@@ -194,11 +218,13 @@ func NewServer(db *sql.DB) *Server {
 func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 	var req CreateTrainingRunRequest
 
+	// Decode the JSON request body into the CreateTrainingRunRequest struct.
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
+	// Validate the request fields.
 	if req.Name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
@@ -214,13 +240,13 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.CPU == "" {
+		req.CPU = "500m"
+	}
+
 	if err := validateResourceQuantity("memory", req.Memory); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
-	}
-
-	if req.CPU == "" {
-		req.CPU = "500m"
 	}
 
 	if req.Memory == "" {
@@ -240,17 +266,13 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		req.Priority = "normal"
 	}
 
-	if req.Replicas == 0 {
-		req.Replicas = 1
-	}
-
 	if req.Replicas < 1 || req.Replicas > 8 {
 		http.Error(w, "replicas must be between 1 and 8", http.StatusBadRequest)
 		return
 	}
 
-	if req.MinAvailable == 0 {
-		req.MinAvailable = req.Replicas
+	if req.Replicas == 0 {
+		req.Replicas = 1
 	}
 
 	if req.MinAvailable < 1 || req.MinAvailable > req.Replicas {
@@ -261,6 +283,10 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 			http.StatusBadRequest,
 		)
 		return
+	}
+
+	if req.MinAvailable == 0 {
+		req.MinAvailable = req.Replicas
 	}
 
 	if req.Queue == "" {
@@ -413,23 +439,10 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	serviceCreated := false
+	serviceName := req.Name + "-master"
 
 	if req.Replicas > 1 {
-		// if err := s.createTrainingHeadlessService(ctx, req.Name); err != nil {
-		// 	log.Printf(
-		// 		"failed to create headless Service for training run %q: %v",
-		// 		req.Name,
-		// 		err,
-		// 	)
-		// 	http.Error(
-		// 		w,
-		// 		"failed to create training networking Service",
-		// 		http.StatusInternalServerError,
-		// 	)
-		// 	return
-		// }
-
-		if err := s.createTrainingMasterService(ctx, req.Name); err != nil {
+		if err := s.createTrainingMasterService(ctx, req.Name, serviceName); err != nil {
 			log.Printf(
 				"failed to create Master Service for training run %q: %v",
 				req.Name,
@@ -463,7 +476,7 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 				Services(namespace).
 				Delete(
 					cleanupCtx,
-					req.Name+"-ddp",
+					serviceName,
 					metav1.DeleteOptions{},
 				)
 
@@ -494,7 +507,7 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		Status:       "Pending",
 	}
 
-	if err := registory.CreateTrainingRunRecord(ctx, s.db, run); err != nil {
+	if err := s.repo.CreateTrainingRunRecord(ctx, run); err != nil {
 		// Best-effort cleanup so we don't leave an untracked Volcano Job.
 		cleanupCtx, cleanupCancel := context.WithTimeout(
 			context.Background(),
@@ -513,6 +526,30 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 				created.GetName(),
 				cleanupErr,
 			)
+		} else {
+			if serviceCreated {
+				cleanupCtx, cancel := context.WithTimeout(
+					context.Background(),
+					5*time.Second,
+				)
+				defer cancel()
+
+				cleanupErr := s.client.CoreV1().
+					Services(namespace).
+					Delete(
+						cleanupCtx,
+						serviceName,
+						metav1.DeleteOptions{},
+					)
+
+				if cleanupErr != nil {
+					log.Printf(
+						"failed to clean up headless Service for training run %q: %v",
+						req.Name,
+						cleanupErr,
+					)
+				}
+			}
 		}
 
 		log.Printf(
@@ -551,14 +588,14 @@ func (s *Server) ListTrainingRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	runsRecords, err := registory.GetAllTrainingRunRecords(ctx, s.db, page, size)
+	runsRecords, err := s.repo.GetAllTrainingRunRecords(ctx, page, size)
 	if err != nil {
 		log.Printf("query training run records: %v", err)
 		http.Error(w, "failed to query training run records", http.StatusInternalServerError)
 		return
 	}
 
-	total, err := registory.CountTrainingRunRecords(ctx, s.db)
+	total, err := s.repo.CountTrainingRunRecords(ctx)
 	if err != nil {
 		log.Printf("count training run records: %v", err)
 		http.Error(w, "failed to count training run records", http.StatusInternalServerError)
@@ -581,27 +618,12 @@ func (s *Server) ListTrainingRuns(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Volcano provides live status while the Job still exists.
-		job, err := s.dynamicClient.
+		_, err := s.dynamicClient.
 			Resource(volcanoJobGVR).
 			Namespace(run.Namespace).
 			Get(ctx, run.Name, metav1.GetOptions{})
 
 		if err == nil {
-			summary.Status = volcanoJobStatus(job)
-
-			if run.Status != "Cancelled" {
-				if err := registory.UpdateTrainingRunStatus(
-					ctx,
-					s.db,
-					run.Name,
-					summary.Status,
-				); err != nil {
-					log.Printf("sync status for training run %s: %v", run.Name, err)
-					http.Error(w, "failed to synchronize training run status", http.StatusInternalServerError)
-					return
-				}
-			}
-
 			// calculate the number of active, succeeded, and failed Pods for this training run vcjob.
 			counters, err := s.getPodCounters(ctx, run.Name)
 			if err != nil {
@@ -630,30 +652,6 @@ func (s *Server) ListTrainingRuns(w http.ResponseWriter, r *http.Request) {
 			}
 
 			summary.Pods = podSummaries
-
-			// sync the lifecycle timestamps for the training run in PostgreSQL.
-			if err := s.syncTrainingRunTimestamps(ctx, &run); err != nil {
-				log.Printf("sync lifecycle timestamps for %s: %v", run.Name, err)
-				http.Error(
-					w,
-					"failed to synchronize training run timestamps",
-					http.StatusInternalServerError,
-				)
-				return
-			}
-
-			summary.ScheduledAt = run.ScheduledAt
-			summary.StartedAt = run.StartedAt
-
-			if run.ScheduledAt != nil {
-				seconds := run.ScheduledAt.Sub(run.CreatedAt).Seconds()
-				summary.QueueWaitSeconds = &seconds
-			}
-
-			if run.StartedAt != nil {
-				seconds := run.StartedAt.Sub(run.CreatedAt).Seconds()
-				summary.StartupLatencySeconds = &seconds
-			}
 		} else if apierrors.IsNotFound(err) {
 			// No Volcano Job: retain the last status recorded in PostgreSQL.
 			// We will improve lifecycle status synchronization in a later step.
@@ -717,7 +715,7 @@ func (s *Server) GetTrainingRun(w http.ResponseWriter, r *http.Request) {
 	summary := TrainingRunSummary{
 		Name:      job.GetName(),
 		Namespace: job.GetNamespace(),
-		Status:    volcanoJobStatus(job),
+		Status:    string(volcanoJobPhaseToTrainingRunPhase(job)),
 		CreatedAt: job.GetCreationTimestamp().Time,
 	}
 	if err := json.NewEncoder(w).Encode(summary); err != nil {
@@ -734,8 +732,6 @@ func (s *Server) GetTrainingRunLogs(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-
-	namespace := "kubeai-training"
 
 	// Verify that the Job exists before retrieving its logs.
 	_, err := s.dynamicClient.
@@ -838,8 +834,6 @@ func (s *Server) DeleteTrainingRun(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	namespace := "kubeai-training"
-
 	job, err := s.dynamicClient.
 		Resource(volcanoJobGVR).
 		Namespace(namespace).
@@ -882,7 +876,7 @@ func (s *Server) DeleteTrainingRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := registory.UpdateTrainingRunStatus(ctx, s.db, name, "Cancelled"); err != nil {
+	if err := s.repo.UpdateTrainingRunStatus(ctx, name, string(TrainingRunCancelled)); err != nil {
 		log.Printf("sync cancelled status for training run %q: %v", name, err)
 		http.Error(w, "deletion was requested but database status update failed", http.StatusInternalServerError)
 		return
@@ -953,6 +947,169 @@ func (s *Server) ListNodes(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		log.Printf("encode node summaries: %v", err)
 	}
+}
+
+func (s *Server) RunReconciler(
+	ctx context.Context,
+	intervals ...time.Duration,
+) {
+	// Default interval
+	interval := defaultReconcileInterval
+
+	// Override default if an interval is provided
+	if len(intervals) > 0 && intervals[0] > 0 {
+		interval = intervals[0]
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	log.Printf(
+		"Starting job reconciler, interval: %s",
+		interval,
+	)
+
+	// Run reconciliation immediately on startup.
+	s.runReconciliation(ctx)
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Stopping job reconciler")
+			return
+
+		case <-ticker.C:
+			s.runReconciliation(ctx)
+		}
+	}
+}
+
+func (s *Server) runReconciliation(ctx context.Context) {
+	// Give each reconciliation cycle a maximum execution time.
+	reconcileCtx, cancel := context.WithTimeout(
+		ctx,
+		2*time.Minute,
+	)
+	defer cancel()
+
+	if err := s.reconcileJobStatuses(reconcileCtx); err != nil {
+		log.Printf("Job reconciliation completed with errors: %v", err)
+	}
+}
+
+// RunPendingTimeoutReconciler periodically checks for training runs
+// that have remained Pending longer than the configured timeout.
+func (s *Server) RunPendingTimeoutReconciler(
+	ctx context.Context,
+	interval time.Duration,
+	pendingTimeout time.Duration,
+) {
+	if interval <= 0 {
+		interval = defaultReconcileInterval
+	}
+	if pendingTimeout <= 0 {
+		pendingTimeout = defaultPendingTimeout
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Run once immediately, then continue periodically.
+	for {
+		if err := s.reconcilePendingTimeouts(ctx, pendingTimeout, 100, 0); err != nil {
+			log.Printf("pending-timeout reconciliation failed: %v", err)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *Server) reconcileJobStatus(
+	ctx context.Context,
+	run *registory.TrainingRun, // Use the actual type returned by your repository.
+) error {
+	// 1. Retrieve the Volcano Job.
+	job, err := s.dynamicClient.
+		Resource(volcanoJobGVR).
+		Namespace(run.Namespace).
+		Get(ctx, run.Name, metav1.GetOptions{})
+
+	if apierrors.IsNotFound(err) {
+		// The Volcano Job no longer exists.
+		// Retain the last status in PostgreSQL for now.
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf(
+			"get Volcano Job %s: %w",
+			run.Name,
+			err,
+		)
+	}
+
+	// 2. Determine the actual Job status.
+	newStatus := string(volcanoJobPhaseToTrainingRunPhase(job))
+
+	// 3. Synchronize the status with PostgreSQL.
+	if run.Status != newStatus {
+		if err := s.repo.UpdateTrainingRunStatus(
+			ctx,
+			run.Name,
+			newStatus,
+		); err != nil {
+			return fmt.Errorf(
+				"update status for training run %s: %w",
+				run.Name,
+				err,
+			)
+		}
+	}
+
+	// 4. Synchronize lifecycle timestamps.
+	if err := s.syncTrainingRunTimestamps(ctx, run); err != nil {
+		return fmt.Errorf(
+			"sync timestamps for training run %s: %w",
+			run.Name,
+			err,
+		)
+	}
+
+	return nil
+}
+
+func (s *Server) reconcileJobStatuses(ctx context.Context) error {
+	// 1. Retrieve all training runs that need reconciliation.
+	runs, err := s.repo.GetTrainingRunsToReconcile(ctx)
+	if err != nil {
+		return fmt.Errorf("get training runs to reconcile: %w", err)
+	}
+
+	// 2. Reconcile each training run.
+	var reconcileErrors []error
+
+	for i := range runs {
+		run := &runs[i]
+
+		if err := s.reconcileJobStatus(ctx, run); err != nil {
+			log.Printf(
+				"failed to reconcile training run %s/%s: %v",
+				run.Namespace,
+				run.Name,
+				err,
+			)
+
+			reconcileErrors = append(reconcileErrors, err)
+			continue
+		}
+	}
+
+	// 3. Return aggregated errors, if any.
+	return errors.Join(reconcileErrors...)
 }
 
 func (s *Server) getPodCounters(ctx context.Context, jobName string) (PodCounters, error) {
@@ -1150,8 +1307,8 @@ func (s *Server) syncTrainingRunTimestamps(
 		}
 
 		if scheduledAt != nil && run.ScheduledAt == nil {
-			if err := registory.UpdateTrainingRunScheduledAt(
-				ctx, s.db, run.Name, *scheduledAt,
+			if err := s.repo.UpdateTrainingRunScheduledAt(
+				ctx, run.Name, *scheduledAt,
 			); err != nil {
 				return err
 			}
@@ -1169,8 +1326,8 @@ func (s *Server) syncTrainingRunTimestamps(
 				continue
 			}
 
-			if err := registory.UpdateTrainingRunStartedAt(
-				ctx, s.db, run.Name, startedAt,
+			if err := s.repo.UpdateTrainingRunStartedAt(
+				ctx, run.Name, startedAt,
 			); err != nil {
 				return err
 			}
@@ -1179,68 +1336,6 @@ func (s *Server) syncTrainingRunTimestamps(
 	}
 
 	return nil
-}
-
-const (
-	defaultReconcileInterval = 30 * time.Second
-	defaultPendingTimeout    = 30 * time.Minute
-	defaultStartupTimeout    = 5 * time.Minute
-)
-
-// RunPendingTimeoutReconciler periodically checks for training runs
-// that have remained Pending longer than the configured timeout.
-func (s *Server) RunPendingTimeoutReconciler(
-	ctx context.Context,
-	interval time.Duration,
-	pendingTimeout time.Duration,
-) {
-	if interval <= 0 {
-		interval = defaultReconcileInterval
-	}
-	if pendingTimeout <= 0 {
-		pendingTimeout = defaultPendingTimeout
-	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	// Run once immediately, then continue periodically.
-	for {
-		if err := s.reconcilePendingTimeouts(ctx, pendingTimeout, 100, 0); err != nil {
-			log.Printf("pending-timeout reconciliation failed: %v", err)
-		}
-
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
-}
-
-func parsePagination(r *http.Request) (int, int, error) {
-	page := 1
-	size := 10
-
-	log.Printf("value page=%s, size=%s", r.URL.Query().Get("page"), r.URL.Query().Get("size"))
-
-	if value := r.URL.Query().Get("page"); value != "" {
-		parsed, err := strconv.Atoi(value)
-		if err != nil || parsed < 1 {
-			return 0, 0, fmt.Errorf("page must be a positive integer")
-		}
-		page = parsed
-	}
-
-	if value := r.URL.Query().Get("size"); value != "" {
-		parsed, err := strconv.Atoi(value)
-		if err != nil || parsed < 1 || parsed > 100 {
-			return 0, 0, fmt.Errorf("size must be between 1 and 100")
-		}
-		size = parsed
-	}
-
-	return page, size, nil
 }
 
 func (s *Server) reconcilePendingTimeouts(
@@ -1252,7 +1347,7 @@ func (s *Server) reconcilePendingTimeouts(
 	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	runs, err := registory.GetAllTrainingRunRecords(checkCtx, s.db, size, offset)
+	runs, err := s.repo.GetAllTrainingRunRecords(checkCtx, size, offset)
 	if err != nil {
 		return fmt.Errorf("list training runs: %w", err)
 	}
@@ -1281,7 +1376,7 @@ func (s *Server) reconcilePendingTimeouts(
 
 		if err == nil {
 			// Do not time out a job that Volcano has already started.
-			if volcanoJobStatus(job) != "Pending" {
+			if volcanoJobPhaseToTrainingRunPhase(job) != TrainingRunPending {
 				continue
 			}
 
@@ -1320,9 +1415,8 @@ func (s *Server) reconcilePendingTimeouts(
 
 		// If the Job was already absent, or its deletion was accepted,
 		// record the timeout. A database error will be retried next cycle.
-		if err := registory.UpdateTrainingRunStatus(
+		if err := s.repo.UpdateTrainingRunStatus(
 			checkCtx,
-			s.db,
 			run.Name,
 			"TimedOut",
 		); err != nil {
@@ -1344,45 +1438,11 @@ func (s *Server) reconcilePendingTimeouts(
 	return nil
 }
 
-func (s *Server) createTrainingHeadlessService(
-	ctx context.Context,
-	runName string,
-) error {
-	serviceName := runName + "-ddp"
-
-	service := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName,
-			Namespace: namespace,
-		},
-		Spec: corev1.ServiceSpec{
-			ClusterIP:                "None",
-			PublishNotReadyAddresses: true,
-			Selector: map[string]string{
-				"kubeai.io/training-run": runName,
-			},
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "distributed",
-					Port:       29500,
-					TargetPort: intstr.FromInt32(29500),
-				},
-			},
-		},
-	}
-
-	_, err := s.client.CoreV1().
-		Services(namespace).
-		Create(ctx, service, metav1.CreateOptions{})
-
-	return err
-}
-
 func (s *Server) createTrainingMasterService(
 	ctx context.Context,
 	runName string,
+	serviceName string,
 ) error {
-	serviceName := runName + "-master"
 
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1417,7 +1477,7 @@ func int64Ptr(v int64) *int64 {
 	return new(v)
 }
 
-func volcanoJobStatus(job *unstructured.Unstructured) string {
+func volcanoJobPhaseToTrainingRunPhase(job *unstructured.Unstructured) TrainingRunPhase {
 	phase, found, err := unstructured.NestedString(
 		job.Object,
 		"status",
@@ -1426,20 +1486,20 @@ func volcanoJobStatus(job *unstructured.Unstructured) string {
 	)
 
 	if err != nil || !found {
-		return "Pending"
+		return TrainingRunPending
 	}
 
 	switch phase {
-	case "Pending":
-		return "Pending"
-	case "Running":
-		return "Running"
-	case "Completed":
-		return "Succeeded"
-	case "Failed":
-		return "Failed"
+	case string(VolcanoJobPending):
+		return TrainingRunPending
+	case string(VolcanoJobRunning):
+		return TrainingRunRunning
+	case string(VolcanoJobCompleted):
+		return TrainingRunSucceeded
+	case string(VolcanoJobFailed):
+		return TrainingRunFailed
 	default:
-		return "Pending"
+		return TrainingRunPending
 	}
 }
 
@@ -1509,4 +1569,29 @@ func validateTrainingRunResources(
 	}
 
 	return nil
+}
+
+func parsePagination(r *http.Request) (int, int, error) {
+	page := 1
+	size := 10
+
+	log.Printf("value page=%s, size=%s", r.URL.Query().Get("page"), r.URL.Query().Get("size"))
+
+	if value := r.URL.Query().Get("page"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 {
+			return 0, 0, fmt.Errorf("page must be a positive integer")
+		}
+		page = parsed
+	}
+
+	if value := r.URL.Query().Get("size"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 || parsed > 100 {
+			return 0, 0, fmt.Errorf("size must be between 1 and 100")
+		}
+		size = parsed
+	}
+
+	return page, size, nil
 }

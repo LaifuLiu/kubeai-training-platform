@@ -68,6 +68,7 @@ const UpdateTrainingRunStatusSQL = `
 		    END
 		WHERE name = $1
 	`
+
 const UpdateTrainingRunScheduledAtSQL = `
 		UPDATE training_runs
 		SET scheduled_at = COALESCE(scheduled_at, $2),
@@ -81,3 +82,14 @@ const UpdateTrainingRunStartedAtSQL = `
 		    updated_at = NOW()
 		WHERE name = $1
 	`
+
+const GetTrainingRunsToReconcileSQL = `SELECT
+    name,
+    namespace,
+    status,
+    created_at,
+    scheduled_at,
+    started_at
+FROM training_runs
+WHERE status NOT IN ('Succeeded', 'Failed', 'Cancelled')
+ORDER BY created_at ASC;`
