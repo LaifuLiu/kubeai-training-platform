@@ -7,7 +7,7 @@ import {
   CodeBlockTitle,
 } from "@/components/ui/code-block";
 
-import { useLogs } from "@/hooks/use-logs";
+import { useLogs } from "@/hooks/query-logs";
 
 export function Logs({ slug }: { slug: string }) {
   const { data } = useLogs({ slug });

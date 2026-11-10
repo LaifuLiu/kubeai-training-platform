@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "@/components/ui/toast";
@@ -33,18 +32,33 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export const QUEUES = ["ai-training", "ai-research", "ai-priority"] as const;
-export const PRIORITY = ["normal", "high"] as const;
+import { useMutateTrainingRuns } from "@/hooks/mutation-training-runs";
 
-const QueueItems: { label: string; value: (typeof QUEUES)[number] }[] = [
-  { label: "ai-training", value: "ai-training" },
-  { label: "ai-research", value: "ai-research" },
-  { label: "ai-priority", value: "ai-priority" },
+export const QUEUES = {
+  TRAINING: "ai-training",
+  RESEARCH: "ai-research",
+  PRIORITY: "ai-priority",
+} as const;
+export const PRIORITY = {
+  NORMAL: "normal",
+  HIGH: "high",
+};
+
+const QueueItems: {
+  label: string;
+  value: (typeof QUEUES)[keyof typeof QUEUES];
+}[] = [
+  { label: "ai-training", value: QUEUES.TRAINING },
+  { label: "ai-research", value: QUEUES.RESEARCH },
+  { label: "ai-priority", value: QUEUES.PRIORITY },
 ];
 
-const PriorityItems: { label: string; value: (typeof PRIORITY)[number] }[] = [
-  { label: "kubeai-normal", value: "normal" },
-  { label: "kubeai-high", value: "high" },
+const PriorityItems: {
+  label: string;
+  value: (typeof PRIORITY)[keyof typeof PRIORITY];
+}[] = [
+  { label: "kubeai-normal", value: PRIORITY.NORMAL },
+  { label: "kubeai-high", value: PRIORITY.HIGH },
 ];
 
 const ReplicasItems = (() => {
@@ -72,14 +86,14 @@ const TrainingRunRequestSchema = z.object({
     .string()
     .min(5, "name must be at least 5 characters.")
     .max(32, "name must be at most 32 characters."),
-  epochs: z.number().int(),
+  epochs: z.coerce.number<number>().min(1).max(1000),
   queue: z.enum(QUEUES),
   priority: z.enum(PRIORITY),
   replicas: z.number().int().gte(1).lte(8),
   minAvailable: z.number().int().gte(1),
   cpu: z.string(),
   memory: z.string(),
-  gpus: z.number().int().lte(0),
+  gpus: z.coerce.number<number>().int().gte(0),
 });
 
 export type TrainingRunRequest = z.infer<typeof TrainingRunRequestSchema>;
@@ -90,8 +104,8 @@ export function BugReportForm() {
     defaultValues: {
       name: "",
       epochs: 1,
-      queue: "ai-training",
-      priority: "normal",
+      queue: QUEUES.TRAINING,
+      priority: PRIORITY.NORMAL,
       replicas: 1,
       minAvailable: 1,
       cpu: "",
@@ -100,11 +114,23 @@ export function BugReportForm() {
     },
   });
 
+  const mutateTrainingRuns = useMutateTrainingRuns();
+
   function onSubmit(data: TrainingRunRequest) {
-    toast.add({
-      type: "success",
-      description:
-        "successfully submitted a new training run, go to traing jobs to check out!",
+    mutateTrainingRuns.mutate(data, {
+      onSuccess: () => {
+        toast.add({
+          type: "success",
+          description:
+            "successfully submitted a new training run, go to training jobs to check out!",
+        });
+      },
+      onError: (error: any) => {
+        toast.add({
+          type: "error",
+          description: `Failed to submit training run: ${error.message}`,
+        });
+      },
     });
   }
 
@@ -139,7 +165,7 @@ export function BugReportForm() {
                     {fieldState.invalid && (
                       <FieldError errors={[fieldState.error]} />
                     )}
-                    <FieldDescription>train name</FieldDescription>
+                    <FieldDescription>training name</FieldDescription>
                   </Field>
                 )}
               />
@@ -165,7 +191,7 @@ export function BugReportForm() {
                     {fieldState.invalid && (
                       <FieldError errors={[fieldState.error]} />
                     )}
-                    <FieldDescription>epochs to train</FieldDescription>
+                    <FieldDescription>epochs to training</FieldDescription>
                   </Field>
                 )}
               />
@@ -183,7 +209,7 @@ export function BugReportForm() {
                     <Select
                       onValueChange={field.onChange}
                       items={QueueItems}
-                      defaultValue={1}
+                      value={field.value}
                     >
                       <SelectTrigger className="w-full max-w-48">
                         <SelectValue />
@@ -215,7 +241,11 @@ export function BugReportForm() {
                     <FieldLabel htmlFor="form-rhf-demo-description">
                       Priority
                     </FieldLabel>
-                    <Select items={PriorityItems} defaultValue={1}>
+                    <Select
+                      items={PriorityItems}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    >
                       <SelectTrigger className="w-full max-w-48">
                         <SelectValue />
                       </SelectTrigger>
@@ -248,7 +278,11 @@ export function BugReportForm() {
                     <FieldLabel htmlFor="form-rhf-demo-description">
                       Replicas
                     </FieldLabel>
-                    <Select items={ReplicasItems} defaultValue={1}>
+                    <Select
+                      items={ReplicasItems}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    >
                       <SelectTrigger className="w-full max-w-48">
                         <SelectValue />
                       </SelectTrigger>
@@ -281,7 +315,11 @@ export function BugReportForm() {
                     <FieldLabel htmlFor="form-rhf-demo-description">
                       minAvailable
                     </FieldLabel>
-                    <Select items={MinAvailableItems} defaultValue={1}>
+                    <Select
+                      items={MinAvailableItems}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    >
                       <SelectTrigger className="w-full max-w-48">
                         <SelectValue />
                       </SelectTrigger>
@@ -384,7 +422,11 @@ export function BugReportForm() {
       </CardContent>
       <CardFooter>
         <Field orientation="horizontal" className="justify-between">
-          <Button type="submit" form="form-create-training-run">
+          <Button
+            type="submit"
+            form="form-create-training-run"
+            disabled={mutateTrainingRuns.isPending}
+          >
             Start training
           </Button>
           <Button type="button" variant="outline" onClick={() => form.reset()}>

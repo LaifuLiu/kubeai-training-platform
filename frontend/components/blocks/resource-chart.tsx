@@ -1,6 +1,6 @@
 "use client";
 
-import { useNodes } from "@/hooks/use-nodes";
+import { useNodes } from "@/hooks/query-nodes";
 import {
   Progress,
   ProgressLabel,

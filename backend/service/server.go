@@ -263,7 +263,7 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Priority == "" {
-		req.Priority = "normal"
+		req.Priority = NormalPriority
 	}
 
 	if req.Replicas < 1 || req.Replicas > 8 {

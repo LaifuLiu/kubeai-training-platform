@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useTrainingRuns } from "@/hooks/use-training-runs";
+import { useTrainingRuns } from "@/hooks/query-training-runs";
 import { Button } from "@/components/ui/button";
 import { TrainingRunsPagination } from "@/components/blocks/training-runs-pagination";
 import { usePagination } from "@/hooks/use-pagination";
