@@ -1,7 +1,5 @@
 "use client";
 
-import * as z from "zod";
-import { TrainingRuns } from "@/types/training-runs";
 import { useMutation } from "@tanstack/react-query";
 import { TrainingRunRequest } from "@/components/blocks/form";
 

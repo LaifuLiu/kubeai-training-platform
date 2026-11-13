@@ -18,6 +18,12 @@ export async function fetchFromBackend(
     });
 
     if (!response.ok) {
+      const errorBody = await response.text();
+
+      console.error("[Backend API Error]", {
+        status: response.status,
+        body: errorBody,
+      });
       throw new Error(`Backend responded with status: ${response.status}`);
     }
 

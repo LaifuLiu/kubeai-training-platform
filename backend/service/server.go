@@ -235,22 +235,22 @@ func (s *Server) CreateTrainingRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := validateResourceQuantity("cpu", req.CPU); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
 	if req.CPU == "" {
 		req.CPU = "500m"
 	}
 
-	if err := validateResourceQuantity("memory", req.Memory); err != nil {
+	if err := validateResourceQuantity("cpu", req.CPU); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if req.Memory == "" {
 		req.Memory = "1Gi"
+	}
+
+	if err := validateResourceQuantity("memory", req.Memory); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	if req.GPUs < 0 || req.GPUs > 8 {
